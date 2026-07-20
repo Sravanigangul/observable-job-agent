@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from job_scout.graph.schemas import JobPosting, RankedJob
+from job_scout.graph.schemas import CVContent, JobPosting, RankedJob, TailoredBullet, TailoringPack
 from tests.conftest import make_job
 
 
@@ -23,3 +23,18 @@ def test_job_posting_source_literal():
     JobPosting(job_id="1", title="t", company="c", location="l", source="adzuna")
     with pytest.raises(ValidationError):
         JobPosting(job_id="1", title="t", company="c", location="l", source="linkedin")
+
+
+def test_tailored_bullet_requires_corpus_ref():
+    TailoredBullet(text="Built a model", corpus_ref="cv-bullet-001")
+    with pytest.raises(ValidationError):
+        TailoredBullet(text="Built a model")
+
+
+def test_tailoring_pack_v2_shape():
+    pack = TailoringPack(
+        cv=CVContent(headline="ML Engineer", summary="Builds models."),
+        cover_letter="Dear team,",
+    )
+    assert pack.cv.experience == []
+    assert pack.honesty_note == ""

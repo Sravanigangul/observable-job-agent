@@ -16,6 +16,7 @@ os.environ["OPIK_API_KEY"] = ""
 os.environ["ADZUNA_APP_ID"] = ""
 os.environ["ADZUNA_APP_KEY"] = ""
 os.environ["JSEARCH_API_KEY"] = ""
+os.environ["TAVILY_API_KEY"] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 
 from job_scout.config import get_settings  # noqa: E402

@@ -892,6 +892,7 @@ dependencies = [
     { name = "fpdf2" },
     { name = "gradio" },
     { name = "httpx" },
+    { name = "jinja2" },
     { name = "langchain" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
@@ -900,6 +901,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pypdf" },
+    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
@@ -922,6 +924,7 @@ requires-dist = [
     { name = "fpdf2", specifier = ">=2.8" },
     { name = "gradio", specifier = ">=5" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "jinja2", specifier = ">=3.1" },
     { name = "langchain", specifier = ">=0.3" },
     { name = "langchain-core", specifier = ">=0.3" },
     { name = "langchain-groq", marker = "extra == 'groq'", specifier = ">=0.2" },
@@ -931,6 +934,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
     { name = "pydantic-settings", specifier = ">=2.6" },
     { name = "pypdf", specifier = ">=5" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 provides-extras = ["groq"]
 
