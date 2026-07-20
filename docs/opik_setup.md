@@ -52,12 +52,67 @@ Run the app (`make app`), upload a fixture CV, and open the project in Opik. You
 should see: the span tree, a working **Show Agent Graph**, a cost > $0 (for API
 models), and the CV attached to the trace.
 
-## 5. Online evaluation rules — _Phase 2_
+## 5. Online evaluation rules — Phase 2
 
-_To be documented in Phase 2: configuring Hallucination + FitExplanationQuality
-online rules, including the PDF-attachment-aware judge._
+Online rules run an LLM judge on a **sample of live traces** as they arrive —
+no batch job, no code change. Configured in the Opik UI (verified against the
+Opik docs at the time of writing — the UI ships weekly, expect drift):
 
-## 6. Annotation queues — _Phase 2_
+1. Open the **job-scout** project → **Rules** tab → **Create new rule**.
+2. **Rule 1 — Hallucination (built-in template):**
+   - Name: `hallucination-on-ranking`.
+   - Sampling rate: `20%` (judges cost money on every sampled trace — start low).
+   - Model: `gpt-4o-mini` (any configured LLM provider works).
+   - Prompt: pick the built-in **Hallucination** template.
+   - Variable mapping: `{{input}}` → the trace input, `{{output}}` → the trace
+     output (the final state includes `ranked_jobs` with the explanations).
+3. **Rule 2 — FitExplanationQuality (custom):**
+   - Same flow, but choose a custom prompt and paste the rubric from
+     `src/job_scout/evals/metrics.py` (`FIT_EXPLANATION_TASK_INTRODUCTION` +
+     `FIT_EXPLANATION_CRITERIA`) with `{{variable}}` placeholders mapped to the
+     trace output. Keeping the rubric text identical to the offline metric is
+     the point: one rubric, three uses (offline experiments, online rule,
+     calibration).
+4. **Rule 3 — cover letter vs CV (the grounding judge):**
+   - Runs on tailoring traces. Map `{{cv}}` → `output.cv_text` and
+     `{{letter}}` → `output.tailoring.cover_letter` (the tailor invocation's
+     final state carries both — a payoff of the single-graph, checkpointed
+     design), with a prompt like: *"Does the letter claim experience, tools,
+     or numbers that the CV does not support? List unsupported claims and
+     score 0 (fabricated) to 1 (fully grounded)."*
 
-_To be documented in Phase 2: annotation queue over low-fit and
-fabrication-flagged traces._
+**Honest limitation (found while building, kept as a finding):** we attach the
+CV **PDF** to every trace (`attach_cv`) intending a PDF-attachment-aware judge,
+but online rules can currently only map **trace input/output variables** — they
+cannot read trace attachments. Rule 3 above is the fallback: it judges against
+the extracted `cv_text` instead of the original PDF, which means PDF-extraction
+errors are invisible to it. Documented in `reports/phase2_findings.md`; revisit
+as Opik ships (the docs already mention vision-capable models for images).
+
+Rules score only traces that arrive **after** the rule is created; use the
+brain icon on the rule to backfill historical traces.
+
+## 6. Annotation queues — Phase 2
+
+The human layer: a reviewer works through a focused queue instead of spelunking
+traces. Everything is scripted:
+
+```bash
+uv run python scripts/setup_annotation_queue.py --queue
+```
+
+This creates two **feedback definitions** — `ranking_reasonable` (categorical
+0/1) and `letter_quality` (numerical 1–5) — and the traces queue
+**job-scout-phase2-review**, pre-loaded with the review-worthy traces:
+tailor-batch runs with `fabrication_flags > 0` and baseline runs whose best fit
+score is under 60.
+
+Reviewer workflow (UI): open **Annotation Queues** → `job-scout-phase2-review`
+(shareable link) → for each trace, read the run, score the defined feedback
+metrics, add comments, **Submit and continue**. Scores land on the traces as
+feedback scores, filterable in the project view.
+
+The related judge-vs-human calibration lives in
+`data/labels/ranking_calibration.csv` (scaffolded via
+`setup_annotation_queue.py --scaffold-calibration`, hand-labeled, scored by
+`run_evals.py --calibration`); results go in `reports/phase2_eval_report.md`.

@@ -51,13 +51,15 @@ Self-Improve**.
 - **A Gradio interface** with streamed progress and a run footer (cost, latency, deep link to the trace)
 - **Multi-source job search** (JSearch, Adzuna, Remotive, offline cache) that runs with **zero API keys**
 - **An honest baseline**: run it at scale, measure everything, document the weaknesses, and resist fixing them too early
+- **Phase 2 — application preparation:** select a ranked job and get a tailored cover letter + a reworded one-page CV (LaTeX → PDF), where every bullet carries a `corpus_ref` back to your real experience and a **deterministic fabrication validator** flags anything it can't ground — visibly, never silently
+- **Phase 2 — the evaluation stack:** verifiable checks (field accuracy, fabrication rate) vs unverifiable judgments (G-Eval, hallucination judges), datasets built from real traces, ≥2 comparable experiments, agent trajectory metrics, online rules, and a judge-vs-human calibration table
 
 ### 📚 The Series
 
 | Part | Focus | Outcome | Tag |
 |------|-------|---------|-----|
-| **1 (this repo)** | **Build** | Working agent + Gradio UI + Opik tracing from run one + a documented baseline | `phase-1` |
-| 2 | Extend, then evaluate | Tailoring node (cover letter + CV suggestions) + datasets, LLM judges, and online evaluation rules | `phase-2` |
+| **1** | **Build** | Working agent + Gradio UI + Opik tracing from run one + a documented baseline | `phase-1` |
+| **2 (this repo)** | **Extend, then evaluate** | Corpus-grounded tailoring (cover letter + LaTeX CV) with a deterministic fabrication validator + the full eval stack: hand-labeled and trace-exported datasets, LLM judges, trajectory metrics, online rules, judge-vs-human calibration | `phase-2` |
 | 3 | Self-improve | Test suites, prompt optimization, and trace-driven fixes with before/after numbers | `phase-3` |
 
 Read the deep dives on [Jam with AI](https://jamwithai.substack.com).
@@ -117,14 +119,17 @@ CV extraction is a preprocessing step (`job_scout.profile`) that produces a type
 ```
 extract_profile(cv) → Profile ─┐
                                ▼
-     START → fetch_jobs → rank_jobs → [enough good matches?]
-                ↑                            │ no
-                └──── reformulate_query ◄────┘   │ yes → END
+  START → [route_entry] ── no selected job ──→ fetch_jobs → rank_jobs → [enough good matches?]
+              │                                    ↑                          │ no
+              │                                    └──── reformulate_query ◄──┘   │ yes → END
+              └── selected_job_id set ──→ tailor → validate_tailoring → END
+                  (reads profile + ranked jobs from the thread's checkpoint — nothing re-runs)
 ```
 
 - **`fetch_jobs`** is an LLM tool-calling node: the model *chooses* the `search_jobs` arguments (query, country, remote).
 - **`rank_jobs`** scores postings in batches of 5, one structured-output call per batch, capped at 25 jobs.
 - **`reformulate_query`** broadens the search if fewer than 5 jobs score ≥ 60, bounded to at most 2 loops. That conditional edge is what makes this an agent rather than a straight-line workflow.
+- **`tailor`** (Phase 2) runs as a *second invocation on the same thread*: it reads the search results from the checkpoint and selects/rewords items from your **CandidateCorpus** (CV + optional official LinkedIn data export — never scraped). **`validate_tailoring`** then checks every claim deterministically. The PDF renders via `tectonic` (`brew install tectonic`); without it you get the `.tex` + an Overleaf pointer.
 
 The search fans out over **JSearch** (primary, city-level), **Adzuna**
 (international), **Remotive** (keyless remote), and a **committed offline cache**.
@@ -154,32 +159,42 @@ Full walkthrough: [`docs/architecture.md`](docs/architecture.md). Adding a sourc
 ```
 observable-job-agent/
 ├── src/job_scout/
-│   ├── app.py          # Gradio three-step wizard UI
+│   ├── app.py          # Gradio four-step wizard UI (Resume → Profile → Jobs → Tailor)
 │   ├── runner.py       # run orchestration shared by UI + batch (tracing, cost, latency)
 │   ├── profile.py      # CV text → Profile (pre-graph extraction)
+│   ├── corpus.py       # CandidateCorpus: CV + optional LinkedIn export (the grounding source)
+│   ├── validation.py   # deterministic fabrication validator (difflib, zero LLM)
+│   ├── renderer.py     # Jinja2 → LaTeX → PDF via tectonic (degrades to .tex)
 │   ├── config.py       # Settings (pydantic-settings, SecretStr keys)
 │   ├── llm.py          # chat-model factory + per-run call budget
 │   ├── tracing.py      # all Opik wiring in one module
-│   ├── graph/          # graph.py, state.py, schemas.py, nodes/, prompts/
-│   └── tools/          # jobs_api.py (JSearch/Adzuna/Remotive/cache), cv_reader.py
-├── scripts/            # run_batch.py, snapshot_jobs.py, generate_fixture_cvs.py
-├── data/               # cached_jobs.json, fixture_cvs/ (4 synthetic CVs)
+│   ├── evals/          # metrics.py: ProfileFieldAccuracy, FabricationRate, FitExplanationQuality
+│   ├── graph/          # graph.py (entry router + search + tailor), state.py, schemas.py, nodes/, prompts/
+│   ├── templates/      # cv.tex.j2 — the single ATS-friendly CV template
+│   └── tools/          # jobs_api.py (JSearch/Adzuna/Remotive/cache), cv_reader.py, research.py (Tavily)
+├── scripts/            # run_batch.py, run_tailor_batch.py, build_*_dataset.py, run_evals.py,
+│                       # setup_annotation_queue.py, snapshot_jobs.py, generate_fixture_*.py
+├── data/               # cached_jobs.json, fixture_cvs/, fixture_linkedin/, labels/ (hand labels)
 ├── docs/               # architecture.md, opik_setup.md, extending_sources.md
-├── reports/            # baseline.json, phase1_findings.md
-└── tests/              # 35 tests (LLM mocked, network mocked, Opik off)
+├── reports/            # baseline.json, tailor_batch.json, phase*_findings.md, phase2_eval_report.md
+└── tests/              # 100+ tests (LLM mocked, network mocked, Opik off)
 ```
 
 ### 🔧 Essential Commands
 
 ```bash
-make setup       # uv sync + pre-commit hooks
-make app         # launch the Gradio app
-make batch       # baseline batch (prints projected cost; add --yes to run)
-make snapshot    # rebuild data/cached_jobs.json from live sources
-make fixtures    # regenerate the synthetic fixture CVs
-make test        # run the test suite (35 tests)
-make lint        # ruff check
-make format      # ruff format + fix
+make setup         # uv sync + pre-commit hooks
+make app           # launch the Gradio app
+make batch         # baseline batch (prints projected cost; add --yes to run)
+make tailor-batch  # Phase 2 tailoring batch (search + tailor per case)
+make eval-datasets # push ranking + tailoring datasets to Opik from traces
+make evals         # eval harness usage (extraction/ranking/tailoring/trajectory/calibration)
+make queue         # create the Opik annotation queue + feedback definitions
+make snapshot      # rebuild data/cached_jobs.json from live sources
+make fixtures      # regenerate the synthetic fixture CVs + LinkedIn export ZIPs
+make test          # run the test suite
+make lint          # ruff check
+make format        # ruff format + fix
 ```
 
 ### 🎓 Target Audience

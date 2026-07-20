@@ -25,8 +25,26 @@ snapshot: ## Rebuild data/cached_jobs.json from live sources
 	uv run python scripts/snapshot_jobs.py
 
 .PHONY: fixtures
-fixtures: ## Regenerate the synthetic fixture CV PDFs
+fixtures: ## Regenerate the synthetic fixture CV PDFs + LinkedIn export ZIPs
 	uv run python scripts/generate_fixture_cvs.py
+	uv run python scripts/generate_fixture_linkedin.py
+
+.PHONY: tailor-batch
+tailor-batch: ## Run the Phase 2 tailoring batch (prompts for --yes cost confirmation)
+	uv run python scripts/run_tailor_batch.py
+
+.PHONY: eval-datasets
+eval-datasets: ## Push ranking + tailoring datasets to Opik from traces
+	uv run python scripts/build_eval_dataset.py --kind ranking --push
+	uv run python scripts/build_eval_dataset.py --kind tailoring --push
+
+.PHONY: evals
+evals: ## Show the eval harness usage (each suite prompts for --yes)
+	uv run python scripts/run_evals.py --help
+
+.PHONY: queue
+queue: ## Create the Opik annotation queue + feedback definitions
+	uv run python scripts/setup_annotation_queue.py --queue
 
 .PHONY: test
 test: ## Run the test suite

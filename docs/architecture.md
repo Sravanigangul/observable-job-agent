@@ -21,20 +21,28 @@ flowchart TB
   EP -->|"Profile"| RUN
 
   subgraph ORCH["runner.py · orchestrator (UI + batch share it)"]
-    RUN["stream_search / run_once<br/>measures cost + latency · streams node status"]
+    RUN["stream_search / run_once / stream_tailor<br/>measures cost + latency · streams node status"]
   end
 
-  RUN -->|"Profile"| G
+  RUN -->|"invocation A: Profile<br/>invocation B: selected_job_id only"| G
 
-  subgraph G["LangGraph agent · graph.py (MemorySaver checkpoint)"]
+  subgraph G["ONE LangGraph agent · graph.py (shared MemorySaver, process lifetime)"]
     direction TB
-    S((START)) --> FJ
+    S((START)) --> RE{"route_entry<br/>selected_job_id set?"}
+    RE -->|"no → job search"| FJ
     FJ["fetch_jobs<br/>LLM picks search args via tool call"] --> RJ
     RJ["rank_jobs<br/>batched LLM scoring · BATCH_SIZE=5"] --> D{"enough good matches?<br/>≥5 jobs scoring ≥60"}
     D -->|"no · under 2 loops"| RQ["reformulate_query<br/>broaden the query"]
     RQ --> FJ
     D -->|"yes · or cap hit"| E((END))
+    RE -->|"yes → tailoring (reads profile +<br/>ranked_jobs from the checkpoint)"| TL
+    TL["tailor<br/>corpus-grounded pack · 1 LLM call"] --> VT
+    VT["validate_tailoring<br/>deterministic fabrication check · 0 LLM"] --> E
   end
+
+  CORP["corpus.py · CandidateCorpus<br/>CV segmentation + optional LinkedIn export ZIP"] --> TL
+  CORP --> VT
+  TL -->|"TailoringPack"| REND["renderer.py<br/>Jinja2 → LaTeX → PDF (tectonic,<br/>degrades to .tex + Overleaf)"]
 
   FJ -->|"query · country · remote"| SRCH
   subgraph SRCH["run_search cascade · jobs_api.py (fall-through, keyless-safe)"]
@@ -53,6 +61,7 @@ flowchart TB
   FJ -. "LLM" .-> OA
   RJ -. "LLM" .-> OA
   RQ -. "LLM" .-> OA
+  TL -. "LLM (SCOUT_TAILOR_MODEL, temp 0.3)" .-> OA
 
   subgraph OBS["Opik observability · tracing.py"]
     TR["track_langgraph + OpikTracer<br/>span tree · agent graph · per-run cost"]
@@ -71,7 +80,7 @@ flowchart TB
   classDef node fill:#fff7e6,stroke:#b06000,color:#111;
   class OA,LLM_L llm;
   class TR,PL,AT,OBS obs;
-  class FJ,RJ,RQ node;
+  class FJ,RJ,RQ,TL,VT node;
 ```
 
 ## Reading it
@@ -86,8 +95,28 @@ flowchart TB
 3. **Job sources.** `fetch_jobs` calls the `run_search` cascade — JSearch →
    Adzuna → Remotive → offline cache — each tried only if the previous returned
    too few, so it runs with **zero API keys**.
-4. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
-   (provider-agnostic + a per-run call budget). **Opik** wraps the whole graph in
-   one line (`track_langgraph`), producing a span tree, the auto-drawn agent
-   graph, per-run cost, the versioned prompt library, and the CV attached to the
-   trace. `config.py` supplies keys and settings.
+4. **The tailoring pipeline (Phase 2).** The SAME compiled graph gains a
+   conditional entry: when the caller passes only `selected_job_id`, the
+   `route_entry` router sends the invocation to `tailor`, which reads `profile`,
+   `ranked_jobs`, and `cv_text` from the thread's **checkpoint** — nothing
+   re-runs. `tailor` selects and rewords items from the `CandidateCorpus` (CV +
+   optional LinkedIn data export), then `validate_tailoring` deterministically
+   checks every bullet, skill, and factual cover-letter sentence against the
+   corpus (`fabrication_flags` — logged, never retried). The pack renders to a
+   one-page PDF via Jinja2 → LaTeX → tectonic, degrading to a `.tex` + Overleaf
+   pointer when tectonic is absent.
+5. **One graph, one checkpointer.** `get_compiled_graph()` holds a single
+   compiled graph + `MemorySaver` for the process lifetime, so the tailor
+   invocation lands on the search invocation's thread. That makes the "second
+   invocation, same thread, no recomputation" trace possible — and makes
+   explicitly nulling `selected_job_id` on every search invocation mandatory
+   (the runner does; the phase 2 notebook demonstrates the stale-state bug).
+6. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
+   (provider-agnostic + a per-run call budget; the budget is per-THREAD now that
+   search and tailor share a checkpoint). **Opik** traces every run: span tree,
+   the auto-drawn agent graph (per-run tracer via `trace_graph`), per-run cost,
+   the versioned prompt library (4 prompts), and the CV attached to the trace.
+   `config.py` supplies keys and settings.
+
+> Note: `images/architecture.png` still shows the Phase 1 topology — regenerate
+> it from the Mermaid source above when producing Phase 2 blog assets.
