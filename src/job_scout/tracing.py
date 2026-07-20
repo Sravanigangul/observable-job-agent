@@ -10,6 +10,7 @@ constants remain the source of truth; Opik mirrors them.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -18,6 +19,7 @@ from typing import Any
 from job_scout.config import get_settings
 from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT, RANK_JOBS_PROMPT_NAME
 from job_scout.graph.prompts.reformulate import REFORMULATE_PROMPT, REFORMULATE_PROMPT_NAME
+from job_scout.graph.prompts.tailor import TAILOR_PROMPT, TAILOR_PROMPT_NAME
 from job_scout.profile import EXTRACT_PROFILE_PROMPT, EXTRACT_PROFILE_PROMPT_NAME
 
 _CONFIGURED = False
@@ -77,12 +79,24 @@ def get_tracer(thread_id: str, tags: list[str], metadata: dict[str, Any] | None 
 
 
 def trace_graph(compiled_graph, tracer):
-    """Wrap the compiled graph so runs are traced (auto graph viz). No-op if disabled."""
+    """Prepare a per-run tracer for a compiled graph. No-op if disabled.
+
+    Phase 1 used ``track_langgraph``, which injects the tracer into the compiled
+    graph's default config *in place* — and refuses to replace one that is
+    already there. With Phase 2's shared process-lifetime graph (see
+    ``get_compiled_graph``) that would pin the FIRST run's tracer, giving every
+    later run the wrong thread_id and tags. So instead we only copy the graph
+    structure onto the per-run tracer (this powers "Show Agent Graph" in the
+    trace sidebar) and the runner passes the tracer via ``config["callbacks"]``.
+
+    Returns the graph unchanged.
+    """
     if tracer is None:
         return compiled_graph
-    from opik.integrations.langchain import track_langgraph
-
-    return track_langgraph(compiled_graph, tracer)
+    # The viz is a nice-to-have, never fatal.
+    with contextlib.suppress(Exception):
+        tracer.set_graph(compiled_graph.get_graph(xray=True))
+    return compiled_graph
 
 
 def attach_cv(tracer, pdf_path: str | Path) -> None:
@@ -124,6 +138,7 @@ _PROMPTS = [
     (EXTRACT_PROFILE_PROMPT_NAME, EXTRACT_PROFILE_PROMPT),
     (RANK_JOBS_PROMPT_NAME, RANK_JOBS_PROMPT),
     (REFORMULATE_PROMPT_NAME, REFORMULATE_PROMPT),
+    (TAILOR_PROMPT_NAME, TAILOR_PROMPT),
 ]
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from job_scout.graph.graph import END, should_reformulate
+from job_scout.graph.graph import END, get_compiled_graph, should_reformulate
 from job_scout.graph.schemas import JobPosting, RankedJob
 from job_scout.llm import LLMBudgetExceededError, ensure_budget
 
@@ -42,3 +42,9 @@ def test_budget_allows_under_limit():
 def test_budget_raises_over_limit():
     with pytest.raises(LLMBudgetExceededError):
         ensure_budget(current_calls=24, planned=2, max_calls=25)
+
+
+def test_get_compiled_graph_is_process_singleton():
+    # One graph + one checkpointer per process is what lets the tailor
+    # invocation read the search invocation's thread state.
+    assert get_compiled_graph() is get_compiled_graph()

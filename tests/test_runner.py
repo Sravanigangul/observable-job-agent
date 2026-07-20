@@ -9,23 +9,24 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import job_scout.runner as runner_mod
-from job_scout.runner import run_once, stream_search
+from job_scout.runner import run_once, stream_search, stream_tailor
 
 
 class _FakeGraph:
-    def __init__(self):
+    def __init__(self, values: dict | None = None):
         self.captured_inputs = None
+        self.values = values if values is not None else {"profile": None, "ranked_jobs": [], "jobs_sources": ["cache"]}
 
     def stream(self, inputs, config, stream_mode):
         self.captured_inputs = inputs
         return iter([])  # no node updates
 
     def get_state(self, config):
-        return SimpleNamespace(values={"profile": None, "ranked_jobs": [], "jobs_sources": ["cache"]})
+        return SimpleNamespace(values=self.values)
 
 
 def _patch(monkeypatch, fake):
-    monkeypatch.setattr(runner_mod, "build_graph", lambda: fake)
+    monkeypatch.setattr(runner_mod, "get_compiled_graph", lambda: fake)
     monkeypatch.setattr(runner_mod, "trace_graph", lambda g, t: g)
     monkeypatch.setattr(runner_mod, "get_tracer", lambda *a, **k: None)
 
@@ -49,4 +50,19 @@ def test_stream_search_yields_result(monkeypatch, sample_profile):
     assert events[-1][0] == "result"
     result = events[-1][1]
     assert result.jobs_sources == ["cache"]
+    assert result.failed is False
+
+
+def test_stream_tailor_passes_only_selection_inputs(monkeypatch):
+    # The acceptance-criterion invocation: nothing but the selection (and the
+    # optional LinkedIn path) goes in; the checkpoint supplies the rest.
+    fake = _FakeGraph(values={"tailoring": None, "fabrication_flags": 2, "errors": ["e"]})
+    _patch(monkeypatch, fake)
+
+    events = list(stream_tailor(thread_id="t1", selected_job_id="j9", tags=["tailor"]))
+
+    assert fake.captured_inputs == {"selected_job_id": "j9", "linkedin_zip_path": None}
+    result = events[-1][1]
+    assert result.fabrication_flags == 2
+    assert result.errors == ["e"]
     assert result.failed is False
