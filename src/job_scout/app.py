@@ -1,22 +1,27 @@
 """Gradio UI for Job Scout.
 
-A three-step wizard with a refined editorial look: warm-paper background with a
+A four-step wizard with a refined editorial look: warm-paper background with a
 faint gradient-and-grain wash, a display serif (Fraunces) paired with a mono for
 data (IBM Plex Mono), emerald accent. The flow is (1) drop your resume,
 (2) review the extracted profile, (3) find jobs — ranked as cards with a
-conic-gauge fit score, matched-skill chips, and honest gaps.
+conic-gauge fit score, matched-skill chips, and honest gaps — and (4) tailor an
+application for a selected job: cover letter + reworded CV, every claim checked
+against the resume, downloadable as PDF/.tex.
 """
 
 from __future__ import annotations
 
+import tempfile
 from html import escape
+from pathlib import Path
 from uuid import uuid4
 
 import gradio as gr
 
 from job_scout.graph.schemas import Profile, RankedJob
 from job_scout.profile import extract_profile
-from job_scout.runner import RunResult, stream_search
+from job_scout.renderer import render_pdf
+from job_scout.runner import RunResult, TailorResult, stream_search, stream_tailor
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
 from job_scout.tracing import opik_url, register_prompts
 
@@ -235,6 +240,28 @@ body::after {
 .js-footer a { color: var(--js-accent); text-decoration: none; }
 .js-footer a:hover { text-decoration: underline; }
 
+/* --- Tailor pack (Phase 2) --- */
+.js-pack { display: flex; flex-direction: column; gap: 14px; }
+.js-letter { white-space: pre-wrap; font-size: 0.93rem; line-height: 1.6; }
+.js-cvprev-role { font-weight: 600; margin: 10px 0 2px; }
+.js-cvprev-dates { color: var(--body-text-color-subdued); font-size: 0.85rem; font-weight: 400; }
+.js-cvprev ul { margin: 4px 0 0; padding-left: 1.2em; }
+.js-cvprev li { font-size: 0.9rem; line-height: 1.5; margin: 3px 0; }
+.js-ref { font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; color: var(--js-accent);
+  background: rgba(14,110,74,0.09); border-radius: 5px; padding: 1px 6px; margin-left: 6px;
+  vertical-align: 1px; white-space: nowrap; }
+.js-honesty { border-left: 3px solid #D97706; background: rgba(217,119,6,0.07);
+  border-radius: 0 12px 12px 0; padding: 12px 16px; font-size: 0.9rem; line-height: 1.55; }
+.js-honesty b { color: #B45309; }
+.js-fab-ok { border: 1px solid rgba(14,110,74,0.35); background: rgba(14,110,74,0.06);
+  border-radius: 12px; padding: 11px 16px; font-size: 0.88rem; color: var(--js-accent); }
+.js-fab-warn { border: 1px solid rgba(217,119,6,0.45); background: rgba(217,119,6,0.07);
+  border-radius: 12px; padding: 12px 16px; font-size: 0.88rem; }
+.js-fab-warn b { color: #B45309; }
+.js-fab-warn ul { margin: 8px 0 0; padding-left: 1.2em; }
+.js-fab-warn li { margin: 4px 0; line-height: 1.5; }
+.js-fab-warn .js-fab-reason { color: var(--body-text-color-subdued); font-size: 0.8rem; }
+
 /* accessibility: visible focus */
 a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
   outline: 2px solid var(--js-accent); outline-offset: 2px; border-radius: 4px; }
@@ -260,8 +287,8 @@ _MARK = (
 
 
 def _stepper(active: int) -> str:
-    """Render the 3-step progress indicator with ``active`` (1-3) highlighted."""
-    labels = ("Resume", "Profile", "Jobs")
+    """Render the 4-step progress indicator with ``active`` (1-4) highlighted."""
+    labels = ("Resume", "Profile", "Jobs", "Tailor")
     items = []
     for i, label in enumerate(labels, 1):
         state = "done" if i < active else "active" if i == active else "todo"
@@ -382,6 +409,81 @@ def _footer_html(result: RunResult) -> str:
     return f'<div class="js-footer">{body}</div>'
 
 
+def _cv_preview_html(pack) -> str:
+    """Render the tailored CV with each bullet's corpus_ref chip (the grounding IS the feature)."""
+    cv = pack.cv
+    parts = [f"<p><b>{escape(cv.headline)}</b></p>", f'<p class="js-job-why">{escape(cv.summary)}</p>']
+    for entry in cv.experience:
+        dates = f' <span class="js-cvprev-dates">{escape(entry.dates)}</span>' if entry.dates else ""
+        parts.append(f'<p class="js-cvprev-role">{escape(entry.role)} — {escape(entry.company)}{dates}</p>')
+        if entry.bullets:
+            bullets = "".join(
+                f"<li>{escape(b.text)}<span class='js-ref'>{escape(b.corpus_ref)}</span></li>" for b in entry.bullets
+            )
+            parts.append(f"<ul>{bullets}</ul>")
+    if cv.skills:
+        pills = "".join(f'<span class="js-pill">{escape(s)}</span>' for s in cv.skills)
+        parts.append(f'<div style="margin-top:10px">{pills}</div>')
+    if cv.education:
+        rows = "".join(f"<li>{escape(line)}</li>" for line in cv.education)
+        parts.append(f"<ul>{rows}</ul>")
+    return f'<div class="js-card js-cvprev">{"".join(parts)}</div>'
+
+
+def _fabrication_html(result: TailorResult) -> str:
+    """Render the validator verdict — never hidden, whatever it says."""
+    if result.fabrication_flags == 0:
+        return '<div class="js-fab-ok">✓ Every claim in this application traced back to your CV.</div>'
+    report = result.fabrication_report
+    items = ""
+    if report:
+        items = "".join(
+            f"<li>“{escape(f.text[:140])}”<br><span class='js-fab-reason'>{escape(f.reason)}</span></li>" for f in report.flagged
+        )
+    n = result.fabrication_flags
+    return (
+        f'<div class="js-fab-warn"><b>⚠ {n} statement{"s" if n != 1 else ""} could not be verified against your CV.</b>'
+        f" Review before sending.<ul>{items}</ul></div>"
+    )
+
+
+def _pack_html(result: TailorResult) -> str:
+    """Render the application pack: cover letter, tailored CV, honesty note."""
+    if result.pack is None:
+        why = escape("; ".join(result.errors) or result.error_message or "unknown error")
+        return f'<div class="js-empty"><div class="js-empty-icon">⚠</div><div>Could not tailor this job: {why}</div></div>'
+    pack = result.pack
+    honesty = ""
+    if pack.honesty_note:
+        honesty = f'<div class="js-honesty"><b>Honesty note</b> — {escape(pack.honesty_note)}</div>'
+    return (
+        '<div class="js-pack">'
+        f"{_fabrication_html(result)}"
+        '<p class="js-section-label">Cover letter</p>'
+        f'<div class="js-card js-letter">{escape(pack.cover_letter)}</div>'
+        '<p class="js-section-label">Tailored CV</p>'
+        f"{_cv_preview_html(pack)}"
+        f"{honesty}"
+        "</div>"
+    )
+
+
+def _tailor_footer_html(result: TailorResult) -> str:
+    """Run footer for the tailor step: cost, latency, research flag, Opik link."""
+    link = f'<a href="{result.opik_url or opik_url()}" target="_blank" rel="noopener">view traces in Opik ↗</a>'
+    if result.failed:
+        body = f"⚠ run failed — {escape(result.error_message)}. The trace has details · {link}"
+    else:
+        sep = ' <span class="js-muted">·</span> '
+        research = "with company research" if result.research_used else "no company research"
+        body = (
+            f'<span class="js-meta-mono">${result.cost_usd:.4f}</span>{sep}'
+            f'<span class="js-meta-mono">{result.latency_s}s</span>{sep}'
+            f"{research}{sep}{link}"
+        )
+    return f'<div class="js-footer">{body}</div>'
+
+
 def _status(text: str, error: bool = False) -> str:
     """Render a status line on the start page."""
     cls = "js-status js-status-err" if error else "js-status"
@@ -407,7 +509,7 @@ def on_upload(file_path: str | None, thread_id: str):
 
     yield (*go, _loading_html("Reading your resume…"), cv_text, "", gr.update())
     try:
-        profile = extract_profile(cv_text, thread_id=thread_id, tags=["phase-1", "ui", "extract"])
+        profile = extract_profile(cv_text, thread_id=thread_id, tags=["phase-2", "ui", "extract"])
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
         yield (*stay, gr.update(), "", _status(f"Couldn't read a profile: {exc}", error=True), None)
         return
@@ -417,32 +519,86 @@ def on_upload(file_path: str | None, thread_id: str):
 def on_find(cv_text: str, profile: Profile | None, thread_id: str):
     """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
 
-    Outputs: (page_profile, page_results, results_html, footer_html).
+    Outputs: (page_profile, page_results, results_html, footer_html, job_select).
     """
     go = gr.update(visible=False), gr.update(visible=True)
     if profile is None:
-        yield (gr.update(visible=True), gr.update(visible=False), gr.update(), "")
+        yield (gr.update(visible=True), gr.update(visible=False), gr.update(), "", gr.update())
         return
 
-    yield (*go, _loading_html("Searching for jobs…"), "")
+    yield (*go, _loading_html("Searching for jobs…"), "", gr.update())
     result = RunResult()
-    for kind, payload in stream_search(profile, cv_text=cv_text, thread_id=thread_id, tags=["phase-1", "ui"]):
+    for kind, payload in stream_search(profile, cv_text=cv_text, thread_id=thread_id, tags=["phase-2", "ui"]):
         if kind == "status":
-            yield (*go, _loading_html(str(payload)), "")
+            yield (*go, _loading_html(str(payload)), "", gr.update())
         elif kind == "result":
             result = payload  # type: ignore[assignment]
 
-    yield (*go, _results_html(result), _footer_html(result))
+    choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
+    select = gr.update(choices=choices, value=None, visible=bool(choices))
+    yield (*go, _results_html(result), _footer_html(result), select)
+
+
+def on_zip(zip_path: str | None) -> str | None:
+    """Store the optional LinkedIn export path in session state (path only, never traced)."""
+    return zip_path
+
+
+def on_tailor(selected_job_id: str | None, thread_id: str, linkedin_zip: str | None, profile: Profile | None):
+    """Step 3 → 4: tailor an application for the selected job on the SAME thread.
+
+    Only ``selected_job_id`` (+ optional LinkedIn export path) is passed to the
+    graph — profile, ranked jobs and CV text come from the thread's checkpoint.
+    Outputs: (page_results, page_tailor, tailor_html, tailor_footer, pdf_btn, tex_btn).
+    """
+    stay = gr.update(visible=True), gr.update(visible=False)
+    go = gr.update(visible=False), gr.update(visible=True)
+    hidden = gr.update(visible=False)
+    if not selected_job_id:
+        gr.Warning("Pick a job from the dropdown first.")
+        yield (*stay, gr.update(), gr.update(), hidden, hidden)
+        return
+
+    yield (*go, _loading_html("Drafting the application…"), "", hidden, hidden)
+    result = TailorResult()
+    stream = stream_tailor(
+        thread_id=thread_id,
+        selected_job_id=selected_job_id,
+        tags=["phase-2", "ui", "tailor"],
+        linkedin_zip_path=linkedin_zip,
+    )
+    for kind, payload in stream:
+        if kind == "status":
+            yield (*go, _loading_html(str(payload)), "", hidden, hidden)
+        elif kind == "result":
+            result = payload  # type: ignore[assignment]
+
+    pdf_btn, tex_btn = hidden, hidden
+    footer = _tailor_footer_html(result)
+    if result.pack is not None:
+        name = (profile.name if profile else None) or "Candidate"
+        render = render_pdf(result.pack.cv, name, Path(tempfile.mkdtemp(prefix="job_scout_render_")))
+        tex_btn = gr.update(value=str(render.tex_path), visible=True)
+        if render.pdf_path is not None:
+            pdf_btn = gr.update(value=str(render.pdf_path), visible=True)
+        elif render.message:
+            footer = f'<div class="js-footer">{escape(render.message)}</div>{footer}'
+    yield (*go, _pack_html(result), footer, pdf_btn, tex_btn)
 
 
 def reset():
-    """Return to step 1 and clear the wizard.
+    """Return to step 1, clear the wizard, and start a FRESH thread.
 
-    Outputs: (page_start, page_profile, page_results, cv_file, cv_text_state,
-    start_status, results_html, footer_html).
+    A new thread_id matters now that the checkpointer is shared: reusing the
+    old thread for a different resume would mix two candidates' state.
+
+    Outputs: (page_start, page_profile, page_results, page_tailor, cv_file,
+    cv_text_state, start_status, results_html, footer_html, thread_id,
+    linkedin_zip_state, job_select, tailor_out, tailor_footer, pdf_btn, tex_btn).
     """
     return (
         gr.update(visible=True),
+        gr.update(visible=False),
         gr.update(visible=False),
         gr.update(visible=False),
         None,
@@ -450,6 +606,13 @@ def reset():
         "",
         "",
         "",
+        str(uuid4()),
+        None,
+        gr.update(choices=[], value=None),
+        "",
+        "",
+        gr.update(visible=False),
+        gr.update(visible=False),
     )
 
 
@@ -461,6 +624,7 @@ def build_app() -> gr.Blocks:
         thread_id = gr.State(lambda: str(uuid4()))
         cv_text_state = gr.State("")
         profile_state = gr.State(None)
+        linkedin_zip_state = gr.State(None)
 
         gr.HTML(
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>Job Scout</h1></div>'
@@ -478,6 +642,13 @@ def build_app() -> gr.Blocks:
             gr.HTML('<p class="js-section-label">Your profile</p>')
             profile_out = gr.HTML()
             find_btn = gr.Button("Find jobs", variant="primary", size="lg")
+            with gr.Accordion("Add your LinkedIn export (optional)", open=False):
+                gr.HTML(
+                    '<p class="js-muted" style="font-size:0.86rem">Used only to enrich the tailoring step. '
+                    "LinkedIn → Settings → “Get a copy of your data”. The ZIP stays on your machine and is "
+                    "never attached to traces.</p>"
+                )
+                linkedin_file = gr.File(label="", file_types=[".zip"], type="filepath", height=90)
             change_btn = gr.Button("Upload a different resume", variant="secondary")
 
         with gr.Group(visible=False) as page_results:
@@ -485,21 +656,63 @@ def build_app() -> gr.Blocks:
             gr.HTML('<p class="js-section-label">Ranked jobs</p>')
             results_out = gr.HTML()
             footer_out = gr.HTML()
+            gr.HTML('<p class="js-section-label" style="margin-top:14px">Prepare an application</p>')
+            job_select = gr.Dropdown(label="", choices=[], value=None, visible=False, interactive=True)
+            tailor_btn = gr.Button("Tailor application", variant="primary")
             restart_btn = gr.Button("Start over", variant="secondary")
+
+        with gr.Group(visible=False) as page_tailor:
+            gr.HTML(_stepper(4))
+            gr.HTML('<p class="js-section-label">Application pack</p>')
+            tailor_out = gr.HTML()
+            with gr.Row():
+                pdf_btn = gr.DownloadButton("Download tailored CV (PDF)", visible=False, variant="primary")
+                tex_btn = gr.DownloadButton("Download .tex", visible=False, variant="secondary")
+            tailor_footer = gr.HTML()
+            back_btn = gr.Button("Back to jobs", variant="secondary")
+            restart_btn2 = gr.Button("Start over", variant="secondary")
 
         cv_file.upload(
             on_upload,
             inputs=[cv_file, thread_id],
             outputs=[page_start, page_profile, profile_out, cv_text_state, start_status, profile_state],
         )
+        linkedin_file.change(on_zip, inputs=[linkedin_file], outputs=[linkedin_zip_state])
         find_btn.click(
             on_find,
             inputs=[cv_text_state, profile_state, thread_id],
-            outputs=[page_profile, page_results, results_out, footer_out],
+            outputs=[page_profile, page_results, results_out, footer_out, job_select],
         )
-        reset_outputs = [page_start, page_profile, page_results, cv_file, cv_text_state, start_status, results_out, footer_out]
+        tailor_btn.click(
+            on_tailor,
+            inputs=[job_select, thread_id, linkedin_zip_state, profile_state],
+            outputs=[page_results, page_tailor, tailor_out, tailor_footer, pdf_btn, tex_btn],
+        )
+        back_btn.click(
+            lambda: (gr.update(visible=True), gr.update(visible=False)),
+            outputs=[page_results, page_tailor],
+        )
+        reset_outputs = [
+            page_start,
+            page_profile,
+            page_results,
+            page_tailor,
+            cv_file,
+            cv_text_state,
+            start_status,
+            results_out,
+            footer_out,
+            thread_id,
+            linkedin_zip_state,
+            job_select,
+            tailor_out,
+            tailor_footer,
+            pdf_btn,
+            tex_btn,
+        ]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
+        restart_btn2.click(reset, outputs=reset_outputs)
 
     return demo
 
