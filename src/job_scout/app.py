@@ -269,20 +269,43 @@ body::after {
 .js-fab-warn li { margin: 4px 0; line-height: 1.5; }
 .js-fab-warn .js-fab-reason { color: var(--body-text-color-subdued); font-size: 0.8rem; }
 
-/* --- Jobvis voice strip --- */
-#jv-strip { padding: 8px 14px; }
-#jv-strip .jv-status { display: flex; align-items: center; font-size: 0.84rem;
-  color: var(--body-text-color-subdued); min-height: 32px; }
-.jv-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-color-primary);
-  display: inline-block; margin-right: 8px; flex: none; }
-.jv-active .jv-dot { background: var(--js-accent-bright); animation: jv-pulse 1.4s ease infinite; }
-.jv-error .jv-dot { background: #B45309; }
-@keyframes jv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(14,156,104,0.35); }
-  50% { box-shadow: 0 0 0 7px rgba(14,156,104,0); } }
+/* --- Strip the Gradio chrome: pages float directly on the paper --- */
+footer { display: none !important; }
+.js-page { background: transparent !important; border: none !important; box-shadow: none !important; }
+.js-page > .styler, .js-page .form { background: transparent !important; border: none !important; box-shadow: none !important; }
+
+/* --- Jobvis voice strip: a dark console over the paper --- */
+#jv-strip { background: linear-gradient(140deg, #1A241F 0%, #101713 100%) !important;
+  border: 1px solid rgba(14,156,104,0.28) !important; border-radius: 18px !important;
+  padding: 14px 18px !important; box-shadow: 0 14px 40px rgba(10, 20, 16, 0.28); }
+#jv-strip .styler, #jv-strip .form, #jv-strip .block { background: transparent !important; border: none !important;
+  box-shadow: none !important; }
+.jv-row { align-items: center !important; }
+#jv-strip button { background: rgba(14,156,104,0.14) !important; color: #7DE3B5 !important;
+  border: 1px solid rgba(14,156,104,0.45) !important; border-radius: 999px !important;
+  font-weight: 600; letter-spacing: 0.01em; transition: all .2s ease; white-space: nowrap; }
+#jv-strip button:hover { background: rgba(14,156,104,0.26) !important; border-color: rgba(125,227,181,0.7) !important; }
+#jv-strip .jv-status { display: flex; align-items: center; min-height: 34px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; letter-spacing: 0.02em;
+  color: rgba(236,242,238,0.72); }
+.jv-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; margin-right: 10px;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), rgba(120,130,125,0.6));
+  display: inline-block; }
+.jv-active .jv-dot { background: radial-gradient(circle at 35% 30%, #B9F5DB, var(--js-accent-bright));
+  animation: jv-pulse 1.6s ease infinite; }
+.jv-error .jv-dot { background: radial-gradient(circle at 35% 30%, #FBD9A5, #B45309); }
+@keyframes jv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(14,156,104,0.45); }
+  50% { box-shadow: 0 0 0 9px rgba(14,156,104,0); } }
+#jv-strip .label-wrap span { color: rgba(236,242,238,0.6); font-size: 0.78rem;
+  font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; }
 .jv-hint { text-align: center; font-size: 0.78rem; color: var(--body-text-color-subdued); margin: 6px 0 0; }
-.jv-transcript { font-size: 0.84rem; line-height: 1.6; max-height: 220px; overflow-y: auto; }
-.jv-transcript .jv-tool { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--js-accent); }
-.jv-transcript .jv-system { color: var(--body-text-color-subdued); font-style: italic; }
+.jv-transcript { font-size: 0.82rem; line-height: 1.65; max-height: 230px; overflow-y: auto;
+  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+  padding: 12px 14px; color: rgba(236,242,238,0.88); }
+.jv-transcript b { color: #B9F5DB; font-weight: 600; }
+.jv-transcript .jv-tool { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: #66D9A8;
+  opacity: 0.9; margin: 2px 0; }
+.jv-transcript .jv-system { color: rgba(236,242,238,0.45); font-style: italic; }
 
 /* accessibility: visible focus */
 a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
@@ -794,21 +817,21 @@ def build_app() -> gr.Blocks:
         voice_ok, voice_hint = is_voice_available()
         if voice_ok:
             with gr.Group(elem_id="jv-strip"):
-                with gr.Row():
+                with gr.Row(elem_classes=["jv-row"]):
                     voice_btn = gr.Button("Talk to Jobvis", variant="secondary", size="sm", scale=0)
                     voice_status = gr.HTML(_voice_status_html("idle"))
-                with gr.Accordion("Jobvis transcript", open=False):
+                with gr.Accordion("Transcript", open=False):
                     voice_transcript = gr.HTML(_transcript_html([]))
         else:
             gr.HTML(f'<p class="jv-hint">{escape(voice_hint)}</p>')
 
-        with gr.Group(visible=True) as page_start:
+        with gr.Group(visible=True, elem_classes=["js-page"]) as page_start:
             gr.HTML(_stepper(1))
             gr.HTML(INTRO_HTML)
             cv_file = gr.File(label="", file_types=[".pdf"], type="filepath", height=150, elem_classes=["js-drop"])
             start_status = gr.HTML('<div class="js-status"></div>')
 
-        with gr.Group(visible=False) as page_profile:
+        with gr.Group(visible=False, elem_classes=["js-page"]) as page_profile:
             gr.HTML(_stepper(2))
             gr.HTML('<p class="js-section-label">Your profile</p>')
             profile_out = gr.HTML()
@@ -822,7 +845,7 @@ def build_app() -> gr.Blocks:
                 linkedin_file = gr.File(label="", file_types=[".zip"], type="filepath", height=90)
             change_btn = gr.Button("Upload a different resume", variant="secondary")
 
-        with gr.Group(visible=False) as page_results:
+        with gr.Group(visible=False, elem_classes=["js-page"]) as page_results:
             gr.HTML(_stepper(3))
             gr.HTML('<p class="js-section-label">Ranked jobs</p>')
             results_out = gr.HTML()
@@ -832,7 +855,7 @@ def build_app() -> gr.Blocks:
             tailor_btn = gr.Button("Tailor application", variant="primary")
             restart_btn = gr.Button("Start over", variant="secondary")
 
-        with gr.Group(visible=False) as page_tailor:
+        with gr.Group(visible=False, elem_classes=["js-page"]) as page_tailor:
             gr.HTML(_stepper(4))
             gr.HTML('<p class="js-section-label">Application pack</p>')
             tailor_out = gr.HTML()
