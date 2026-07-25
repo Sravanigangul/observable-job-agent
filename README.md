@@ -165,6 +165,11 @@ step 2 and Jobvis knows you immediately — "Start over" is what forgets it.
 Jobs are deliberately *not* persisted (postings go stale): each session
 fetches fresh, one spoken "find me jobs" away.
 
+Two surfaces, one session: the wizard at `/` for the manual click-flow, and
+**Jarvis mode** at `/jarvis/` — a full-dark voice console (breathing orb, live
+top-matches, application panel with PDF downloads) where everything after the
+CV upload happens by voice, with Jobvis leading each step.
+
 Worth knowing: macOS asks for **microphone permission on your terminal app**
 (not the browser); one voice-triggered run at a time (don't click the wizard's
 own buttons mid-run); you can stop the voice session during a long run — the

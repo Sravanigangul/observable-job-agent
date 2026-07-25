@@ -96,6 +96,31 @@ keyword boosting stops "Jobvis" and "CV" being mis-heard; and the console orb
 is driven by the actual PCM level of Jobvis's voice (computed in the audio
 interface — no SDK support needed) with a live latency readout beside it.
 
+## Jarvis mode — the voice-first tab (/jarvis)
+
+The main app keeps the manual click-flow; **http://localhost:7860/jarvis/**
+(the "Jarvis mode ↗" link in the voice strip) is the same session as a
+full-dark, fully voice-directed console: a breathing orb driven by Jobvis's
+actual voice level, Engage/Stand down, a live top-matches panel, an
+application-ready panel with the PDF downloads, and the transcript feed. The
+intended flow: upload the CV once in the main app (upload stays a deliberate,
+manual act) — then everything else happens by voice in this tab, with Jobvis
+leading: offer to search → offer the top three with matches and gaps → offer to
+tailor the CV and cover letter → announce the finished pack.
+
+Implementation notes (hard-won, for readers extending this):
+- It is a **separate Gradio app mounted next to the wizard** on one FastAPI
+  server (`gr.mount_gradio_app`), NOT a `demo.route` page — Gradio 6 multipage
+  dispatches the index page's auto-generated load events on every page, which
+  crashes the frontend when their outputs don't exist there. Two apps share
+  nothing in the browser and everything in the process (bridge, run manager,
+  voice session, candidate store).
+- Gradio 6 applies `theme`/`css` at **mount time**, not from the Blocks
+  constructor.
+- Keep `gr.Timer` at the Blocks **root**, not inside layout containers, and
+  wire a **priming `load` event**: a mounted app's client only opens its queue
+  connection on the first event — without it the Timer never starts.
+
 ## Observability
 
 Voice-*triggered* runs go through `runner.py` like every other run, so they are

@@ -303,6 +303,9 @@ footer { display: none !important; }
 #jv-strip .label-wrap span { color: rgba(236,242,238,0.6); font-size: 0.78rem;
   font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; }
 .jv-hint { text-align: center; font-size: 0.78rem; color: var(--body-text-color-subdued); margin: 6px 0 0; }
+.jv-link { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: #7DE3B5 !important;
+  text-decoration: none; white-space: nowrap; align-self: center; }
+.jv-link:hover { text-decoration: underline; }
 .jv-transcript { font-size: 0.82rem; line-height: 1.65; max-height: 230px; overflow-y: auto;
   background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
   padding: 12px 14px; color: rgba(236,242,238,0.88); }
@@ -310,6 +313,47 @@ footer { display: none !important; }
 .jv-transcript .jv-tool { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: #66D9A8;
   opacity: 0.9; margin: 2px 0; }
 .jv-transcript .jv-system { color: rgba(236,242,238,0.45); font-style: italic; }
+
+/* --- Jarvis mode (/jarvis): full-dark voice console ------------------------ */
+#jx-backdrop { position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background: #0C110F; }
+#jx-backdrop::after { content: ""; position: absolute; inset: 0;
+  background: radial-gradient(55% 40% at 50% 18%, rgba(14,156,104,0.16), transparent 70%),
+              radial-gradient(70% 50% at 50% 100%, rgba(10,60,42,0.25), transparent 70%); }
+#jx-root { position: relative; z-index: 2; padding: 26px 0 40px; text-align: center; }
+#jx-root .jx-title { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 2rem;
+  color: #ECF2EE; letter-spacing: -0.02em; margin: 0 0 4px; }
+#jx-root .jx-sub { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(236,242,238,0.45); margin: 0 0 26px; }
+.jx-orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; margin: 6px 0 18px; }
+.jx-orb { width: 132px; height: 132px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, rgba(185,245,219,0.9), rgba(14,156,104,0.55) 46%, rgba(10,40,30,0.9) 78%);
+  box-shadow: 0 0 40px rgba(14,156,104,0.25), inset 0 0 30px rgba(0,0,0,0.35);
+  opacity: 0.45; transition: transform .45s ease, box-shadow .45s ease, opacity .45s ease; }
+.jx-live .jx-orb { opacity: 1;
+  transform: scale(calc(1 + var(--jv-level, 0) * 0.35));
+  box-shadow: 0 0 calc(44px + var(--jv-level, 0) * 90px) rgba(14,200,130, calc(0.30 + var(--jv-level, 0) * 0.45)),
+              inset 0 0 30px rgba(0,0,0,0.3);
+  animation: jx-breathe 3.2s ease-in-out infinite; }
+.jx-err .jx-orb { background: radial-gradient(circle at 38% 32%, #FBD9A5, #B45309 60%, #3a1e04); opacity: 0.9; }
+@keyframes jx-breathe { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
+.jx-orb-status { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; color: rgba(236,242,238,0.7); }
+#jx-root button { border-radius: 999px !important; }
+.jx-panel { background: rgba(255,255,255,0.045); border: 1px solid rgba(14,156,104,0.25);
+  border-radius: 16px; padding: 16px 20px; margin: 14px auto; max-width: 560px; text-align: left;
+  color: rgba(236,242,238,0.88); font-size: 0.92rem; line-height: 1.55; }
+.jx-panel-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #66D9A8; margin: 0 0 10px; }
+.jx-row { display: flex; align-items: center; gap: 14px; padding: 8px 0;
+  border-top: 1px solid rgba(255,255,255,0.06); }
+.jx-row:first-of-type { border-top: none; }
+.jx-row .jx-rank { font-family: 'IBM Plex Mono', monospace; color: #66D9A8; font-size: 0.8rem; flex: none; }
+.jx-row .jx-job { flex: 1; }
+.jx-row .jx-job b { color: #ECF2EE; }
+.jx-row .jx-meta { font-size: 0.8rem; color: rgba(236,242,238,0.55); }
+.jx-score { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 1.05rem; color: #7DE3B5; flex: none; }
+.jx-empty { color: rgba(236,242,238,0.55); font-size: 0.9rem; }
+#jx-root .jv-transcript { max-width: 560px; margin: 0 auto; text-align: left; }
 
 /* accessibility: visible focus */
 a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
@@ -737,6 +781,168 @@ def on_voice_tick():
     return (status_html, transcript, no, no, no, no, no, no, no, no, no, no)
 
 
+def _ensure_jarvis_session() -> None:
+    """Standalone /jarvis visit: claim a wizard thread and seed the saved candidate.
+
+    The bridge is process-wide, so if the main page already registered a thread
+    this is a no-op — the Jarvis page simply views the same session. (Two tabs,
+    one bridge: last registered thread wins, as documented.)
+    """
+    bridge = voice_bridge.get_bridge()
+    if bridge.snapshot().thread_id:
+        return
+    thread_id = str(uuid4())
+    bridge.register_thread(thread_id)
+    stored = candidate_store.load_candidate()
+    if stored is not None:
+        bridge.record_profile(stored[0], stored[1], thread_id)
+
+
+def _jarvis_orb_html(status: str, hud: dict | None, error: str = "") -> str:
+    """The big reactive orb + status line for the Jarvis page."""
+    level = float((hud or {}).get("level") or 0.0)
+    latency_ms = (hud or {}).get("latency_ms")
+    cls = {"active": "jx-live", "connecting": "jx-live", "error": "jx-err"}.get(status, "")
+    labels = {"idle": "standing by", "connecting": "coming online…", "active": "listening", "error": "fault"}
+    label = error or labels.get(status, status)
+    latency = f'<span class="jv-lat">· {int(latency_ms)} ms</span>' if latency_ms and status == "active" else ""
+    return (
+        f'<div class="jx-orb-wrap {cls}" style="--jv-level:{level:.3f}"><div class="jx-orb"></div>'
+        f'<div class="jx-orb-status">{escape(label)}{latency}</div></div>'
+    )
+
+
+def _jarvis_results_html(values: dict, snap, progress: dict) -> str:
+    """The live top-matches panel: progress, results, or what to do next."""
+    if progress.get("running"):
+        body = f'<span class="jx-empty">{escape(str(progress.get("latest_status") or "working…"))}</span>'
+        return f'<div class="jx-panel"><p class="jx-panel-title">Working</p>{body}</div>'
+    ranked = list(values.get("ranked_jobs") or [])
+    if ranked:
+        rows = "".join(
+            f'<div class="jx-row"><span class="jx-rank">{i:02d}</span>'
+            f'<span class="jx-job"><b>{escape(r.job.title)}</b><br>'
+            f'<span class="jx-meta">{escape(r.job.company)} · {escape(r.job.location)}</span></span>'
+            f'<span class="jx-score">{r.fit_score}</span></div>'
+            for i, r in enumerate(ranked[:3], 1)
+        )
+        return f'<div class="jx-panel"><p class="jx-panel-title">Top matches</p>{rows}</div>'
+    if snap.profile is not None:
+        return (
+            '<div class="jx-panel"><p class="jx-panel-title">Ready</p>'
+            f'<span class="jx-empty">Profile loaded for {escape(snap.profile.name or "the candidate")}. '
+            "Say: “Find me jobs.”</span></div>"
+        )
+    return (
+        '<div class="jx-panel"><p class="jx-panel-title">No candidate</p>'
+        '<span class="jx-empty">Drop a CV in the <a href="/" style="color:#66D9A8">main app</a> once — '
+        "Jobvis remembers it from then on.</span></div>"
+    )
+
+
+_JARVIS_RENDER_CACHE: dict = {"key": None, "pdf": None, "tex": None}
+
+
+def _jarvis_pack_panel(values: dict, snap) -> tuple[str, dict, dict]:
+    """Application-ready panel + download buttons; the PDF renders once per pack."""
+    hidden = gr.update(visible=False)
+    pack = values.get("tailoring")
+    if pack is None:
+        return "", hidden, hidden
+    if _JARVIS_RENDER_CACHE["key"] != (key := hash(pack.cover_letter)):
+        name = (snap.profile.name if snap.profile else None) or "Candidate"
+        render = render_pdf(pack.cv, name, Path(tempfile.mkdtemp(prefix="job_scout_render_")))
+        _JARVIS_RENDER_CACHE.update(key=key, pdf=render.pdf_path, tex=render.tex_path)
+    flags = int(values.get("fabrication_flags") or 0)
+    verdict = (
+        "✓ Every claim checked against the CV — no flags."
+        if flags == 0
+        else f"⚠ {flags} statement{'s' if flags != 1 else ''} could not be verified — review before sending."
+    )
+    html = (
+        '<div class="jx-panel"><p class="jx-panel-title">Application ready</p>'
+        f"<b>{escape(pack.cv.headline)}</b><br><span class='jx-meta'>{escape(verdict)}</span></div>"
+    )
+    pdf = gr.update(value=str(_JARVIS_RENDER_CACHE["pdf"]), visible=True) if _JARVIS_RENDER_CACHE["pdf"] else hidden
+    tex = gr.update(value=str(_JARVIS_RENDER_CACHE["tex"]), visible=True) if _JARVIS_RENDER_CACHE["tex"] else hidden
+    return html, pdf, tex
+
+
+def on_jarvis_toggle():
+    """Engage/stand down the voice session from the Jarvis page."""
+    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
+
+    _ensure_jarvis_session()
+    session = get_voice_session()
+    status, _, _ = session.snapshot()
+    if status in ("connecting", "active"):
+        session.stop()
+        return gr.update(value="Engage Jobvis")
+    ok, _message = session.start()
+    return gr.update(value="Stand down" if ok else "Engage Jobvis")
+
+
+def on_jarvis_tick():
+    """The Jarvis page's 1s heartbeat: orb, feed, matches, pack — all from shared state.
+
+    Also pops/announces finished runs, so the page is self-sufficient when it is
+    the only tab open; panels read the checkpoint directly, so whichever tab
+    pops first, this view converges a tick later.
+    """
+    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
+
+    _ensure_jarvis_session()
+    session = get_voice_session()
+    status, lines, error = session.snapshot()
+    bridge = voice_bridge.get_bridge()
+    run = bridge.pop_finished_run()
+    if run is not None:
+        session.announce(_run_announcement(run))
+    snap = bridge.snapshot()
+    values = voice_bridge.checkpoint_values(snap.thread_id)
+    pack_html_str, pdf_btn, tex_btn = _jarvis_pack_panel(values, snap)
+    return (
+        _jarvis_orb_html(status, session.hud(), error if status == "error" else ""),
+        _transcript_html(lines),
+        _jarvis_results_html(values, snap, bridge.run_status()),
+        pack_html_str,
+        pdf_btn,
+        tex_btn,
+        gr.update(value="Stand down" if status in ("connecting", "active") else "Engage Jobvis"),
+    )
+
+
+def _build_jarvis_page(voice_ok: bool, voice_hint: str) -> list | None:
+    """The /jarvis page: a full-dark, fully voice-directed console.
+
+    Returns the tick-output component list (None when voice is unavailable) so
+    the caller can wire the priming load event.
+    """
+    gr.HTML('<div id="jx-backdrop"></div>')
+    with gr.Column(elem_id="jx-root"):
+        gr.HTML('<p class="jx-title">Jobvis</p><p class="jx-sub">voice-directed job scout</p>')
+        if not voice_ok:
+            gr.HTML(f'<p class="jv-hint">{escape(voice_hint)}</p>')
+            return None
+        jx_orb = gr.HTML(_jarvis_orb_html("idle", None))
+        jx_btn = gr.Button("Engage Jobvis", variant="primary", size="lg")
+        jx_results = gr.HTML("")
+        jx_pack = gr.HTML("")
+        with gr.Row():
+            jx_pdf = gr.DownloadButton("Download tailored CV (PDF)", visible=False, variant="primary")
+            jx_tex = gr.DownloadButton("Download .tex", visible=False, variant="secondary")
+        with gr.Accordion("Transcript", open=False):
+            jx_feed = gr.HTML(_transcript_html([]))
+
+    # Wiring at Blocks ROOT level: a Timer created inside a layout container can
+    # miss the client render tree, and its null instance kills the frontend at
+    # dispatch_load_events (observed on 6.20).
+    outputs = [jx_orb, jx_feed, jx_results, jx_pack, jx_pdf, jx_tex, jx_btn]
+    jx_btn.click(on_jarvis_toggle, outputs=[jx_btn])
+    gr.Timer(1.0).tick(on_jarvis_tick, outputs=outputs)
+    return outputs
+
+
 def _on_load(thread_id: str):
     """Register the wizard thread with the voice bridge and restore a saved candidate.
 
@@ -748,8 +954,9 @@ def _on_load(thread_id: str):
     """
     voice_bridge.get_bridge().register_thread(thread_id)
     stored = candidate_store.load_candidate()
+    off = gr.Timer(active=False)  # one-shot: the restore timer disarms itself
     if stored is None:
-        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), off)
     profile, cv_text = stored
     voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
     note = (
@@ -762,6 +969,7 @@ def _on_load(thread_id: str):
         _profile_html(profile) + note,
         cv_text,
         profile,
+        off,
     )
 
 
@@ -916,6 +1124,7 @@ def build_app() -> gr.Blocks:
                 with gr.Row(elem_classes=["jv-row"]):
                     voice_btn = gr.Button("Talk to Jobvis", variant="secondary", size="sm", scale=0)
                     voice_status = gr.HTML(_voice_status_html("idle"))
+                    gr.HTML('<a class="jv-link" href="/jarvis/" target="_blank" rel="noopener">Jarvis mode ↗</a>')
                 with gr.Accordion("Transcript", open=False):
                     voice_transcript = gr.HTML(_transcript_html([]))
         else:
@@ -1023,18 +1232,61 @@ def build_app() -> gr.Blocks:
                     tex_btn,
                 ],
             )
-        demo.load(
+        # One-shot restore on page load. Deliberately a Timer, not demo.load:
+        # load events dispatch on EVERY page of a multipage app, and their
+        # outputs referencing index-page components crash the /jarvis frontend.
+        # A Timer is a page-scoped component, so this cannot leak.
+        restore_timer = gr.Timer(0.2)
+        restore_timer.tick(
             _on_load,
             inputs=[thread_id],
-            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state],
+            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state, restore_timer],
         )
 
     return demo
 
 
+def build_jarvis_app() -> gr.Blocks:
+    """The /jarvis console as its OWN Gradio app.
+
+    Deliberately not a `demo.route` page: Gradio 6 multipage dispatches the
+    index page's (auto-generated) load events on every page, which crashes the
+    frontend when their outputs don't exist there. Two independent apps mounted
+    on one FastAPI server share nothing in the browser — and share everything
+    that matters (bridge, run manager, voice session, candidate store) in the
+    process.
+    """
+    voice_ok, voice_hint = is_voice_available()
+    with gr.Blocks(title="Jobvis", theme=THEME, css=CSS) as jarvis:
+        outputs = _build_jarvis_page(voice_ok, voice_hint)
+        if outputs is not None:
+            # Priming load: on a mounted app the client only opens its queue
+            # connection on the first event, so without this the 1s Timer never
+            # starts and the page sits frozen until a click. It also fills the
+            # panels immediately. (Safe here — the multipage load-event crash
+            # applied to demo.route pages, not standalone apps.)
+            jarvis.load(on_jarvis_tick, outputs=outputs)
+    return jarvis
+
+
 def main() -> None:
-    """Launch the Gradio app."""
-    build_app().launch()
+    """Serve the wizard at / and the Jarvis console at /jarvis on one server."""
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.responses import RedirectResponse
+
+    server = FastAPI()
+    # Gradio 6 applies theme/css at launch/mount time, not from the Blocks ctor.
+    server = gr.mount_gradio_app(server, build_jarvis_app(), path="/jarvis", theme=THEME, css=CSS)
+
+    # The root app's routes would swallow the bare path before Starlette's
+    # slash-redirect fires, so register the redirect ahead of the root mount.
+    @server.get("/jarvis")
+    def _jarvis_redirect() -> RedirectResponse:
+        return RedirectResponse(url="/jarvis/")
+
+    server = gr.mount_gradio_app(server, build_app(), path="/", theme=THEME, css=CSS)
+    uvicorn.run(server, host="127.0.0.1", port=7860)
 
 
 if __name__ == "__main__":
