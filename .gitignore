@@ -20,6 +20,9 @@ dist/
 .ruff_cache/
 .ipynb_checkpoints/
 
+# The locally persisted candidate (CV text + profile) — personal data, never committed
+data/candidate/
+
 # OS
 .DS_Store
 
