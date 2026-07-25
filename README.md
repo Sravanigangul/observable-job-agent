@@ -138,6 +138,41 @@ Full walkthrough: [`docs/architecture.md`](docs/architecture.md). Adding a sourc
 
 ---
 
+## 🎙️ Jobvis — the voice concierge (optional)
+
+Ask out loud — *"what jobs are available?"* — and a dry English butler reads you
+your top three matches with fit scores and gaps, starts a search or tailors an
+application on request, and the finished PDF pops up on screen by itself.
+Built on **ElevenLabs Agents** with the app's Python functions registered as
+client tools: the agent can only speak what the LangGraph checkpoint returns —
+the Phase 2 grounding contract, applied to voice (watch the tool calls appear in
+the transcript panel).
+
+```bash
+brew install portaudio   # system audio dep (pyaudio builds against it)
+# put ELEVENLABS_API_KEY in .env — free tier: 15 conversation min/month.
+# The key needs the Agents Platform (Conversational AI) scopes enabled.
+make jobvis-agent        # create the agent, copy the printed id into .env
+make app-voice           # `make app` + the voice extra — the Jobvis strip appears
+```
+
+(Plain `make app` re-syncs the venv *without* the extra — uv strips it — so use
+`make app-voice` whenever you want the voice strip.)
+
+Job Scout **remembers your resume between runs**: the extracted profile is
+saved locally (`data/candidate/`, gitignored), so a restart opens straight on
+step 2 and Jobvis knows you immediately — "Start over" is what forgets it.
+Jobs are deliberately *not* persisted (postings go stale): each session
+fetches fresh, one spoken "find me jobs" away.
+
+Worth knowing: macOS asks for **microphone permission on your terminal app**
+(not the browser); one voice-triggered run at a time (don't click the wizard's
+own buttons mid-run); you can stop the voice session during a long run — the
+result still pops. Full chapter, demo script, and troubleshooting:
+[`docs/jobvis.md`](docs/jobvis.md).
+
+---
+
 ## 🔧 Reference
 
 ### 🛠️ Technology Stack
@@ -169,13 +204,14 @@ observable-job-agent/
 │   ├── llm.py          # chat-model factory + per-run call budget
 │   ├── tracing.py      # all Opik wiring in one module
 │   ├── evals/          # metrics.py: ProfileFieldAccuracy, FabricationRate, FitExplanationQuality
+│   ├── voice/          # Jobvis: bridge.py, tools.py, persona.py, session.py (ElevenLabs Agents)
 │   ├── graph/          # graph.py (entry router + search + tailor), state.py, schemas.py, nodes/, prompts/
 │   ├── templates/      # cv.tex.j2 — the single ATS-friendly CV template
 │   └── tools/          # jobs_api.py (JSearch/Adzuna/Remotive/cache), cv_reader.py, research.py (Tavily)
 ├── scripts/            # run_batch.py, run_tailor_batch.py, build_*_dataset.py, run_evals.py,
 │                       # setup_annotation_queue.py, snapshot_jobs.py, generate_fixture_*.py
 ├── data/               # cached_jobs.json, fixture_cvs/, fixture_linkedin/, labels/ (hand labels)
-├── docs/               # architecture.md, opik_setup.md, extending_sources.md
+├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md
 ├── reports/            # baseline.json, tailor_batch.json, phase*_findings.md, phase2_eval_report.md
 └── tests/              # 100+ tests (LLM mocked, network mocked, Opik off)
 ```
@@ -185,6 +221,7 @@ observable-job-agent/
 ```bash
 make setup         # uv sync + pre-commit hooks
 make app           # launch the Gradio app
+make app-voice     # launch with the Jobvis voice extra
 make batch         # baseline batch (prints projected cost; add --yes to run)
 make tailor-batch  # Phase 2 tailoring batch (search + tailor per case)
 make eval-datasets # push ranking + tailoring datasets to Opik from traces
@@ -192,6 +229,7 @@ make evals         # eval harness usage (extraction/ranking/tailoring/trajectory
 make queue         # create the Opik annotation queue + feedback definitions
 make snapshot      # rebuild data/cached_jobs.json from live sources
 make fixtures      # regenerate the synthetic fixture CVs + LinkedIn export ZIPs
+make jobvis-agent  # create/update the Jobvis ElevenLabs agent (prints the agent id)
 make test          # run the test suite
 make lint          # ruff check
 make format        # ruff format + fix
