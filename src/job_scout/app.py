@@ -7,6 +7,10 @@ data (IBM Plex Mono), emerald accent. The flow is (1) drop your resume,
 conic-gauge fit score, matched-skill chips, and honest gaps — and (4) tailor an
 application for a selected job: cover letter + reworded CV, every claim checked
 against the resume, downloadable as PDF/.tex.
+
+When Jobvis is configured (see job_scout.voice), a voice strip sits above the
+wizard: a tap-to-talk session that narrates results and can trigger runs, whose
+finished work the 1s Timer pushes into the step pages.
 """
 
 from __future__ import annotations
@@ -18,12 +22,15 @@ from uuid import uuid4
 
 import gradio as gr
 
+from job_scout import candidate_store
 from job_scout.graph.schemas import Profile, RankedJob
 from job_scout.profile import extract_profile
 from job_scout.renderer import render_pdf
 from job_scout.runner import RunResult, TailorResult, stream_search, stream_tailor
 from job_scout.tools.cv_reader import CVReadError, extract_cv_text
 from job_scout.tracing import opik_url, register_prompts
+from job_scout.voice import bridge as voice_bridge
+from job_scout.voice import is_voice_available
 
 CAPTION = "Prepares applications — never submits them."
 
@@ -262,6 +269,21 @@ body::after {
 .js-fab-warn li { margin: 4px 0; line-height: 1.5; }
 .js-fab-warn .js-fab-reason { color: var(--body-text-color-subdued); font-size: 0.8rem; }
 
+/* --- Jobvis voice strip --- */
+#jv-strip { padding: 8px 14px; }
+#jv-strip .jv-status { display: flex; align-items: center; font-size: 0.84rem;
+  color: var(--body-text-color-subdued); min-height: 32px; }
+.jv-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-color-primary);
+  display: inline-block; margin-right: 8px; flex: none; }
+.jv-active .jv-dot { background: var(--js-accent-bright); animation: jv-pulse 1.4s ease infinite; }
+.jv-error .jv-dot { background: #B45309; }
+@keyframes jv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(14,156,104,0.35); }
+  50% { box-shadow: 0 0 0 7px rgba(14,156,104,0); } }
+.jv-hint { text-align: center; font-size: 0.78rem; color: var(--body-text-color-subdued); margin: 6px 0 0; }
+.jv-transcript { font-size: 0.84rem; line-height: 1.6; max-height: 220px; overflow-y: auto; }
+.jv-transcript .jv-tool { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--js-accent); }
+.jv-transcript .jv-system { color: var(--body-text-color-subdued); font-style: italic; }
+
 /* accessibility: visible focus */
 a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
   outline: 2px solid var(--js-accent); outline-offset: 2px; border-radius: 4px; }
@@ -275,6 +297,7 @@ a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .js-job { animation: none; opacity: 1; transform: none; }
   .js-spin { animation: none; }
+  .jv-active .jv-dot { animation: none; }
 }
 """.replace("__GRAIN__", _GRAIN)
 
@@ -490,6 +513,142 @@ def _status(text: str, error: bool = False) -> str:
     return f'<div class="{cls}">{escape(text)}</div>'
 
 
+def _pack_downloads(result: TailorResult, profile: Profile | None) -> tuple[dict, dict, str]:
+    """Footer + download-button updates for a finished tailoring run (click or voice)."""
+    hidden = gr.update(visible=False)
+    footer = _tailor_footer_html(result)
+    pdf_btn, tex_btn = hidden, hidden
+    if result.pack is not None:
+        name = (profile.name if profile else None) or "Candidate"
+        render = render_pdf(result.pack.cv, name, Path(tempfile.mkdtemp(prefix="job_scout_render_")))
+        tex_btn = gr.update(value=str(render.tex_path), visible=True)
+        if render.pdf_path is not None:
+            pdf_btn = gr.update(value=str(render.pdf_path), visible=True)
+        elif render.message:
+            footer = f'<div class="js-footer">{escape(render.message)}</div>{footer}'
+    return pdf_btn, tex_btn, footer
+
+
+def _voice_status_html(status: str, message: str = "") -> str:
+    """Render the Jobvis status line with a pulse dot."""
+    cls = {"active": "jv-active", "connecting": "jv-active", "error": "jv-error"}.get(status, "")
+    labels = {"idle": "Jobvis is off", "connecting": "connecting…", "active": "Jobvis is listening", "error": "voice error"}
+    label = message or labels.get(status, status)
+    return f'<div class="jv-status {cls}"><span class="jv-dot"></span>{escape(label)}</div>'
+
+
+def _transcript_html(lines: list[tuple[str, str]]) -> str:
+    """Render the conversation transcript, tool calls included — the grounding on display."""
+    if not lines:
+        return '<div class="jv-transcript"><span class="jv-system">Nothing yet — start a session and say hello.</span></div>'
+    rows = []
+    for role, text in lines[-60:]:
+        if role == "tool":
+            rows.append(f'<div class="jv-tool">⚙ {escape(text)}</div>')
+        elif role == "system":
+            rows.append(f'<div class="jv-system">{escape(text)}</div>')
+        else:
+            rows.append(f'<div><b>{"You" if role == "you" else "Jobvis"}:</b> {escape(text)}</div>')
+    return f'<div class="jv-transcript">{"".join(rows)}</div>'
+
+
+def on_voice_toggle():
+    """Start or stop the Jobvis voice session. Outputs: (voice_btn, voice_status)."""
+    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
+
+    session = get_voice_session()
+    status, _, _ = session.snapshot()
+    if status in ("connecting", "active"):
+        session.stop()
+        return gr.update(value="Talk to Jobvis"), _voice_status_html("idle")
+    ok, message = session.start()
+    return (
+        gr.update(value="Stop Jobvis" if ok else "Talk to Jobvis"),
+        _voice_status_html("active" if ok else "error", message),
+    )
+
+
+def on_voice_tick():
+    """Poll the voice session; push a finished voice-triggered run into the wizard.
+
+    Most ticks are no-ops beyond the status/transcript refresh. When the bridge
+    hands over a finished run, the SAME renderers the click path uses fill the
+    step pages: a search pops step 3, a tailoring pops step 4 with the PDF —
+    even if the user hung up the voice session during the wait.
+    """
+    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
+
+    status, lines, error = get_voice_session().snapshot()
+    status_html = _voice_status_html(status, error if status == "error" else "")
+    transcript = _transcript_html(lines)
+    no = gr.update()
+
+    run = voice_bridge.get_bridge().pop_finished_run()
+    if run is not None and run.kind == "search" and run.search_result is not None and not run.failed:
+        result = run.search_result
+        choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
+        return (
+            status_html,
+            transcript,
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(visible=False),
+            _results_html(result),
+            _footer_html(result),
+            gr.update(choices=choices, value=None, visible=bool(choices)),
+            no,
+            no,
+            no,
+            no,
+        )
+    if run is not None and run.kind == "tailor" and run.tailor_result is not None and not run.failed:
+        result = run.tailor_result
+        pdf_btn, tex_btn, footer = _pack_downloads(result, voice_bridge.get_bridge().snapshot().profile)
+        return (
+            status_html,
+            transcript,
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=True),
+            no,
+            no,
+            no,
+            _pack_html(result),
+            footer,
+            pdf_btn,
+            tex_btn,
+        )
+    return (status_html, transcript, no, no, no, no, no, no, no, no, no, no)
+
+
+def _on_load(thread_id: str):
+    """Register the wizard thread with the voice bridge and restore a saved candidate.
+
+    With a stored candidate the app opens on step 2 — profile shown, Find jobs
+    ready, Jobvis pre-seeded — and no LLM call happens (the extraction was paid
+    for when the CV was first uploaded). Jobs are NOT restored: results go
+    stale, so every session fetches fresh.
+    Outputs: (page_start, page_profile, profile_html, cv_text_state, profile_state).
+    """
+    voice_bridge.get_bridge().register_thread(thread_id)
+    stored = candidate_store.load_candidate()
+    if stored is None:
+        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+    profile, cv_text = stored
+    voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
+    note = (
+        '<p class="js-muted" style="text-align:center;font-size:0.8rem;margin-top:10px">'
+        "Restored from your last session — “Start over” forgets it.</p>"
+    )
+    return (
+        gr.update(visible=False),
+        gr.update(visible=True),
+        _profile_html(profile) + note,
+        cv_text,
+        profile,
+    )
+
+
 def on_upload(file_path: str | None, thread_id: str):
     """Step 1 → 2: read the resume, extract the profile, and reveal the profile page.
 
@@ -513,6 +672,8 @@ def on_upload(file_path: str | None, thread_id: str):
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
         yield (*stay, gr.update(), "", _status(f"Couldn't read a profile: {exc}", error=True), None)
         return
+    voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
+    candidate_store.save_candidate(profile, cv_text)
     yield (*go, _profile_html(profile), cv_text, "", profile)
 
 
@@ -536,11 +697,13 @@ def on_find(cv_text: str, profile: Profile | None, thread_id: str):
 
     choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
     select = gr.update(choices=choices, value=None, visible=bool(choices))
+    voice_bridge.get_bridge().record_step("results")
     yield (*go, _results_html(result), _footer_html(result), select)
 
 
 def on_zip(zip_path: str | None) -> str | None:
     """Store the optional LinkedIn export path in session state (path only, never traced)."""
+    voice_bridge.get_bridge().record_linkedin_zip(zip_path)
     return zip_path
 
 
@@ -573,29 +736,26 @@ def on_tailor(selected_job_id: str | None, thread_id: str, linkedin_zip: str | N
         elif kind == "result":
             result = payload  # type: ignore[assignment]
 
-    pdf_btn, tex_btn = hidden, hidden
-    footer = _tailor_footer_html(result)
-    if result.pack is not None:
-        name = (profile.name if profile else None) or "Candidate"
-        render = render_pdf(result.pack.cv, name, Path(tempfile.mkdtemp(prefix="job_scout_render_")))
-        tex_btn = gr.update(value=str(render.tex_path), visible=True)
-        if render.pdf_path is not None:
-            pdf_btn = gr.update(value=str(render.pdf_path), visible=True)
-        elif render.message:
-            footer = f'<div class="js-footer">{escape(render.message)}</div>{footer}'
+    pdf_btn, tex_btn, footer = _pack_downloads(result, profile)
+    voice_bridge.get_bridge().record_step("tailor")
     yield (*go, _pack_html(result), footer, pdf_btn, tex_btn)
 
 
 def reset():
-    """Return to step 1, clear the wizard, and start a FRESH thread.
+    """Return to step 1, clear the wizard, start a FRESH thread, forget the candidate.
 
     A new thread_id matters now that the checkpointer is shared: reusing the
-    old thread for a different resume would mix two candidates' state.
+    old thread for a different resume would mix two candidates' state. The
+    persisted candidate is cleared too — "start over" is the explicit way to
+    switch resumes, whereas an app restart keeps you.
 
     Outputs: (page_start, page_profile, page_results, page_tailor, cv_file,
     cv_text_state, start_status, results_html, footer_html, thread_id,
     linkedin_zip_state, job_select, tailor_out, tailor_footer, pdf_btn, tex_btn).
     """
+    new_thread_id = str(uuid4())
+    voice_bridge.get_bridge().register_thread(new_thread_id)
+    candidate_store.clear_candidate()
     return (
         gr.update(visible=True),
         gr.update(visible=False),
@@ -606,7 +766,7 @@ def reset():
         "",
         "",
         "",
-        str(uuid4()),
+        new_thread_id,
         None,
         gr.update(choices=[], value=None),
         "",
@@ -630,6 +790,17 @@ def build_app() -> gr.Blocks:
             f'<div id="js-header"><div class="js-mark">{_MARK}<h1>Job Scout</h1></div>'
             f'<div><span class="js-tag">{CAPTION}</span></div></div>'
         )
+
+        voice_ok, voice_hint = is_voice_available()
+        if voice_ok:
+            with gr.Group(elem_id="jv-strip"):
+                with gr.Row():
+                    voice_btn = gr.Button("Talk to Jobvis", variant="secondary", size="sm", scale=0)
+                    voice_status = gr.HTML(_voice_status_html("idle"))
+                with gr.Accordion("Jobvis transcript", open=False):
+                    voice_transcript = gr.HTML(_transcript_html([]))
+        else:
+            gr.HTML(f'<p class="jv-hint">{escape(voice_hint)}</p>')
 
         with gr.Group(visible=True) as page_start:
             gr.HTML(_stepper(1))
@@ -713,6 +884,31 @@ def build_app() -> gr.Blocks:
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
         restart_btn2.click(reset, outputs=reset_outputs)
+
+        if voice_ok:
+            voice_btn.click(on_voice_toggle, outputs=[voice_btn, voice_status])
+            gr.Timer(1.0).tick(
+                on_voice_tick,
+                outputs=[
+                    voice_status,
+                    voice_transcript,
+                    page_profile,
+                    page_results,
+                    page_tailor,
+                    results_out,
+                    footer_out,
+                    job_select,
+                    tailor_out,
+                    tailor_footer,
+                    pdf_btn,
+                    tex_btn,
+                ],
+            )
+        demo.load(
+            _on_load,
+            inputs=[thread_id],
+            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state],
+        )
 
     return demo
 
