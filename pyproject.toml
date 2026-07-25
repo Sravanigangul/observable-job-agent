@@ -37,6 +37,9 @@ dev = [
 # Documented alternative provider (see .env.example). Install with:
 #   uv sync --extra groq
 groq = ["langchain-groq>=0.2"]
+# Jobvis, the voice concierge (ElevenLabs Agents + system mic). Install with:
+#   brew install portaudio && uv sync --extra voice
+voice = ["elevenlabs[pyaudio]>=2.39,<3"]
 
 [build-system]
 requires = ["hatchling"]

@@ -45,9 +45,22 @@ class Settings(BaseSettings):
 
     tavily_api_key: SecretStr = Field(default=SecretStr(""), alias="TAVILY_API_KEY")
 
+    elevenlabs_api_key: SecretStr = Field(default=SecretStr(""), alias="ELEVENLABS_API_KEY")
+    elevenlabs_agent_id: str = Field(default="", alias="ELEVENLABS_AGENT_ID")
+    elevenlabs_voice_id: str = Field(default="", alias="ELEVENLABS_VOICE_ID")
+    jobvis_echo_gate: bool = Field(default=True, alias="JOBVIS_ECHO_GATE")
+
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
 
-    @field_validator("opik_workspace", "opik_project_name", "scout_model", "scout_tailor_model", mode="before")
+    @field_validator(
+        "opik_workspace",
+        "opik_project_name",
+        "scout_model",
+        "scout_tailor_model",
+        "elevenlabs_agent_id",
+        "elevenlabs_voice_id",
+        mode="before",
+    )
     @classmethod
     def _drop_inline_comment(cls, value: object) -> object:
         """Treat a value that is only a ``# comment`` as empty.
@@ -80,6 +93,11 @@ class Settings(BaseSettings):
     def has_opik(self) -> bool:
         """Whether Opik tracing is enabled and has an API key."""
         return self.opik_enabled and bool(self.opik_api_key.get_secret_value())
+
+    @property
+    def has_voice(self) -> bool:
+        """Whether Jobvis has both an ElevenLabs API key and an agent id."""
+        return bool(self.elevenlabs_api_key.get_secret_value() and self.elevenlabs_agent_id)
 
 
 @lru_cache(maxsize=1)

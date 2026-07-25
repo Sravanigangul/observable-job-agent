@@ -16,6 +16,10 @@ setup: ## Install deps and pre-commit hooks
 app: ## Launch the Gradio app
 	uv run python -m job_scout.app
 
+.PHONY: app-voice
+app-voice: ## Launch the app with the Jobvis voice extra (needs `brew install portaudio`)
+	uv run --extra voice python -m job_scout.app
+
 .PHONY: batch
 batch: ## Run the baseline batch (prompts for --yes cost confirmation)
 	uv run python scripts/run_batch.py
@@ -45,6 +49,10 @@ evals: ## Show the eval harness usage (each suite prompts for --yes)
 .PHONY: queue
 queue: ## Create the Opik annotation queue + feedback definitions
 	uv run python scripts/setup_annotation_queue.py --queue
+
+.PHONY: jobvis-agent
+jobvis-agent: ## Create/update the Jobvis ElevenLabs agent (prints the agent id)
+	uv run python scripts/setup_jobvis_agent.py
 
 .PHONY: test
 test: ## Run the test suite
