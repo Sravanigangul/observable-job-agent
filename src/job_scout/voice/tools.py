@@ -154,8 +154,23 @@ def start_tailoring(parameters: dict | None = None) -> dict:
 
 
 def get_run_status(parameters: dict | None = None) -> dict:
-    """Progress of the background search/tailor run."""
-    return _bridge.get_bridge().run_status()
+    """Progress of the background search/tailor run.
+
+    When nothing was ever started, the note says so UNAMBIGUOUSLY — an agent
+    once spun a bare "nothing is running" into "the search has completed",
+    announcing results that did not exist.
+    """
+    bridge = _bridge.get_bridge()
+    status = bridge.run_status()
+    if not status.get("running") and "kind" not in status:
+        has_results = bool(_bridge.ranked_jobs(bridge.snapshot().thread_id))
+        status["has_results"] = has_results
+        status["note"] = "No background run has been started in this voice session." + (
+            " Ranked results from earlier DO exist on screen."
+            if has_results
+            else " There are no results yet either — nothing has completed. If the user wants jobs, call start_search now."
+        )
+    return status
 
 
 CLIENT_TOOL_HANDLERS = {

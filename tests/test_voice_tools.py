@@ -197,3 +197,17 @@ def test_start_tailoring_ambiguous(bridge_with_results):
 
 def test_run_status_idle(bridge):
     assert tools.get_run_status()["running"] is False
+
+
+def test_run_status_unambiguous_when_nothing_started(bridge):
+    status = tools.get_run_status()
+    assert status["running"] is False
+    assert status["has_results"] is False
+    assert "nothing has completed" in status["note"]  # an agent once hallucinated completion from silence
+
+
+def test_run_status_notes_existing_results_without_a_run(bridge_with_results):
+    status = tools.get_run_status()
+    assert status["running"] is False
+    assert status["has_results"] is True
+    assert "DO exist on screen" in status["note"]
