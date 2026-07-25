@@ -19,17 +19,27 @@ def test_agent_payload_carries_persona_and_all_tools():
     assert payload["name"] == "Jobvis"
     agent = payload["conversation_config"]["agent"]
     assert agent["first_message"] == FIRST_MESSAGE
+    assert "{{part_of_day}}" in agent["first_message"]  # dynamic-variable greeting template
     assert agent["prompt"]["prompt"] == JOBVIS_SYSTEM_PROMPT
     tools = agent["prompt"]["tools"]
     assert sorted(t["name"] for t in tools) == sorted(CLIENT_TOOL_HANDLERS)
     assert all(t["type"] == "client" for t in tools)
     assert all(t["expects_response"] is True for t in tools)  # wait-for-response: results must reach the agent
-    assert "tts" not in payload["conversation_config"]  # no voice id → keep the agent's default
+
+
+def test_agent_payload_latency_tuning():
+    config = setup_script.build_agent_payload(voice_id=None)["conversation_config"]
+    assert config["tts"] == {"model_id": "eleven_flash_v2"}  # English agents must use turbo/flash v2
+    assert config["agent"]["prompt"]["llm"] == "gemini-2.5-flash"
+    assert config["turn"]["turn_eagerness"] == "eager"
+    assert config["turn"]["soft_timeout_config"]["message"] == "One moment."
+    assert "Jobvis" in config["asr"]["keywords"]
+    assert "optimize_streaming_latency" not in config["tts"]  # deprecated no-op — never send it
 
 
 def test_agent_payload_sets_voice_when_given():
     payload = setup_script.build_agent_payload(voice_id="v123")
-    assert payload["conversation_config"]["tts"] == {"voice_id": "v123"}
+    assert payload["conversation_config"]["tts"] == {"model_id": "eleven_flash_v2", "voice_id": "v123"}
 
 
 def test_tool_payload_parameter_schema():

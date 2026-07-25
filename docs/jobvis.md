@@ -66,7 +66,8 @@ Jobvis "find me jobs" (on-demand rather than auto-on-startup, to protect your
 JSearch quota and LLM budget during development). "Start over" is the explicit
 forget-me: it clears the stored candidate as well as the wizard.
 
-Two design choices keep the long-running parts honest:
+Three design choices keep the long-running parts honest — and make the butler
+*proactive*:
 
 - **Fire-and-forget runs.** `start_search`/`start_tailoring` return in
   milliseconds while the real run streams on a background thread — ElevenLabs
@@ -77,6 +78,23 @@ Two design choices keep the long-running parts honest:
   handed over exactly once and rendered by the *same* functions the buttons use
   (`_results_html`, `_pack_html`, `render_pdf`). Search pops step 3; tailoring
   pops step 4 with the PDF — even if you hung up the voice session mid-run.
+- **The announcement (the JARVIS move).** The same pop also *tells the agent*:
+  a "System note" is injected via the SDK's `send_user_message` — the one
+  client event that triggers a full spoken response — so Jobvis breaks the
+  silence himself: *"The search is complete — twelve matches, the best is ML
+  Engineer at Acme, 87 out of 100."* (`send_contextual_update`, by contrast,
+  is silent background context: the app whispers screen events — CV uploaded,
+  button-triggered runs — so Jobvis never contradicts what you can see.) The
+  persona knows "System note:" prefixed messages come from the app, speaks
+  their substance, and never reads the prefix aloud.
+
+Smaller JARVIS touches: the greeting is personalized per session through
+dynamic variables ("Good evening, Shantanu" — from the persisted profile, no
+override-security settings needed); the agent runs `eleven_flash_v2_5` TTS with
+eager turn-taking and a spoken "One moment." filler instead of dead air; ASR
+keyword boosting stops "Jobvis" and "CV" being mis-heard; and the console orb
+is driven by the actual PCM level of Jobvis's voice (computed in the audio
+interface — no SDK support needed) with a live latency readout beside it.
 
 ## Observability
 
@@ -127,13 +145,16 @@ the side sells the grounding.
 
 | Beat | You say | What happens |
 |------|---------|--------------|
-| 1 | *(tap Talk to Jobvis)* | "Jobvis, at your service. Shall I run through your top matches?" |
-| 2 | "Not yet — what can you actually see?" | Polite honesty: no CV uploaded, asks you to drop one. `⚙ get_session_status()` in the transcript. |
-| 3 | *(drop a fixture CV, then)* "Find me jobs." | "I've started — takes about a minute." Wizard advances to step 3 **by itself**; ranked cards appear. |
-| 4 | "So what are my top three?" | Three titles, companies, scores out of 100, and gaps — every number visible in the `⚙ get_top_jobs(3)` result. |
-| 5 | "Tailor an application for the second one." | "On it." A minute later **step 4 pops with the PDF**. |
+| 1 | *(tap Talk to Jobvis)* | "Good evening, Shantanu. Jobvis at your service — shall we see what the market offers today?" (it knows you from the persisted profile) |
+| 2 | "Yes — find me jobs." | "Very good — I've started. About a minute." The orb settles; you say nothing. |
+| 3 | *(stay silent — this is the money moment)* | **Jobvis breaks the silence himself:** "The search is complete — twelve matches. The best: ML Engineer at Acme, 87 out of 100. Shall I run through the top three?" The wizard is already on step 3. |
+| 4 | "Go on." | Three titles, companies, scores, and gaps — every number visible in the `⚙ get_top_jobs(3)` transcript line. |
+| 5 | "Tailor an application for the second one." | "On it." You chat or wait; a minute later Jobvis **announces the pack unprompted** and **step 4 pops with the PDF**. |
 | 6 | "Give me the highlights." | Target job, letter length, CV headline, and the fabrication verdict: "every claim checked against your CV — no flags." |
 | 7 | "Thank you, Jobvis." | Something dry. Cut. |
+
+Film with the transcript panel open: the `⚙` tool calls and the `announced:`
+system lines are the observable proof that nothing was scripted.
 
 Rehearse by **text** in the ElevenLabs dashboard (agent → Test) — it exercises
 the same prompt without spending conversation minutes. Keep live sessions short;

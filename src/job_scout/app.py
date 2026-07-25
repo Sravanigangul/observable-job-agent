@@ -292,7 +292,11 @@ footer { display: none !important; }
   background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), rgba(120,130,125,0.6));
   display: inline-block; }
 .jv-active .jv-dot { background: radial-gradient(circle at 35% 30%, #B9F5DB, var(--js-accent-bright));
-  animation: jv-pulse 1.6s ease infinite; }
+  animation: jv-pulse 1.6s ease infinite;
+  transform: scale(calc(1 + var(--jv-level, 0) * 1.1));
+  filter: brightness(calc(1 + var(--jv-level, 0) * 0.8));
+  transition: transform .45s ease, filter .45s ease; }
+.jv-lat { opacity: 0.55; margin-left: 8px; }
 .jv-error .jv-dot { background: radial-gradient(circle at 35% 30%, #FBD9A5, #B45309); }
 @keyframes jv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(14,156,104,0.45); }
   50% { box-shadow: 0 0 0 9px rgba(14,156,104,0); } }
@@ -552,12 +556,61 @@ def _pack_downloads(result: TailorResult, profile: Profile | None) -> tuple[dict
     return pdf_btn, tex_btn, footer
 
 
-def _voice_status_html(status: str, message: str = "") -> str:
-    """Render the Jobvis status line with a pulse dot."""
+def _voice_status_html(status: str, message: str = "", hud: dict | None = None) -> str:
+    """Render the Jobvis status line: level-driven orb + optional latency readout."""
     cls = {"active": "jv-active", "connecting": "jv-active", "error": "jv-error"}.get(status, "")
     labels = {"idle": "Jobvis is off", "connecting": "connecting…", "active": "Jobvis is listening", "error": "voice error"}
     label = message or labels.get(status, status)
-    return f'<div class="jv-status {cls}"><span class="jv-dot"></span>{escape(label)}</div>'
+    level = float((hud or {}).get("level") or 0.0)
+    latency_ms = (hud or {}).get("latency_ms")
+    latency = f'<span class="jv-lat">· {int(latency_ms)} ms</span>' if latency_ms and status == "active" else ""
+    return (
+        f'<div class="jv-status {cls}"><span class="jv-dot" style="--jv-level:{level:.3f}"></span>'
+        f"{escape(label)}{latency}</div>"
+    )
+
+
+def _voice_context(text: str) -> None:
+    """Whisper a screen event to a live Jobvis session (silent; no-op when idle)."""
+    from job_scout.voice import get_voice_session  # lazy: the SDK loads only inside a running session
+
+    get_voice_session().share_context(text)
+
+
+def _run_announcement(run) -> str:
+    """The 'System note' that makes Jobvis speak, unprompted, about a finished run."""
+    if run.failed:
+        return (
+            f"System note: the {run.kind} failed ({run.error or 'unknown error'}). " "Apologize briefly and suggest trying again."
+        )
+    if run.kind == "search" and run.search_result is not None:
+        ranked = run.search_result.ranked_jobs
+        if not ranked:
+            return (
+                "System note: the job search finished but found no matching jobs. "
+                "Break it gently; suggest a more detailed resume or trying again later."
+            )
+        top = ranked[0]
+        return (
+            f"System note: the job search just finished — {len(ranked)} jobs ranked, now on screen. "
+            f"Top match: {top.job.title} at {top.job.company}, {top.fit_score} out of 100. "
+            "Brief the user in one or two sentences and offer to run through the top three."
+        )
+    if run.kind == "tailor" and run.tailor_result is not None:
+        result = run.tailor_result
+        if result.pack is None:
+            return "System note: tailoring finished but produced no application. Apologize and suggest trying again."
+        flags = result.fabrication_flags
+        verdict = (
+            "every claim checked against the CV, no flags"
+            if flags == 0
+            else f"{flags} statement{'s' if flags != 1 else ''} could not be verified — advise an on-screen review"
+        )
+        return (
+            "System note: the application pack is ready and on screen — cover letter and tailored CV with downloads. "
+            f"Fabrication check: {verdict}. Announce it and offer the highlights."
+        )
+    return f"System note: the {run.kind} finished; the results are on screen."
 
 
 def _transcript_html(lines: list[tuple[str, str]]) -> str:
@@ -601,12 +654,15 @@ def on_voice_tick():
     """
     from job_scout.voice import get_voice_session  # lazy: needs the voice extra
 
-    status, lines, error = get_voice_session().snapshot()
-    status_html = _voice_status_html(status, error if status == "error" else "")
+    session = get_voice_session()
+    status, lines, error = session.snapshot()
+    status_html = _voice_status_html(status, error if status == "error" else "", session.hud())
     transcript = _transcript_html(lines)
     no = gr.update()
 
     run = voice_bridge.get_bridge().pop_finished_run()
+    if run is not None:
+        session.announce(_run_announcement(run))  # the butler brings the news himself
     if run is not None and run.kind == "search" and run.search_result is not None and not run.failed:
         result = run.search_result
         choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
@@ -697,6 +753,7 @@ def on_upload(file_path: str | None, thread_id: str):
         return
     voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
     candidate_store.save_candidate(profile, cv_text)
+    _voice_context(f"Screen event: the user just uploaded a CV; a profile was extracted for {profile.name or 'the candidate'}.")
     yield (*go, _profile_html(profile), cv_text, "", profile)
 
 
@@ -721,6 +778,7 @@ def on_find(cv_text: str, profile: Profile | None, thread_id: str):
     choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
     select = gr.update(choices=choices, value=None, visible=bool(choices))
     voice_bridge.get_bridge().record_step("results")
+    _voice_context(f"Screen event: an on-screen job search just finished — {len(result.ranked_jobs)} ranked jobs are visible.")
     yield (*go, _results_html(result), _footer_html(result), select)
 
 
@@ -761,6 +819,7 @@ def on_tailor(selected_job_id: str | None, thread_id: str, linkedin_zip: str | N
 
     pdf_btn, tex_btn, footer = _pack_downloads(result, profile)
     voice_bridge.get_bridge().record_step("tailor")
+    _voice_context("Screen event: an application pack was just tailored via the on-screen button and is now visible.")
     yield (*go, _pack_html(result), footer, pdf_btn, tex_btn)
 
 

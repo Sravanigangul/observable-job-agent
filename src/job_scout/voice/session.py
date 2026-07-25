@@ -16,8 +16,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
+from array import array
+from datetime import datetime
 
+import job_scout.voice.bridge as _bridge
 from job_scout.config import get_settings
+from job_scout.graph.schemas import Profile
 from job_scout.voice.tools import CLIENT_TOOL_HANDLERS
 
 logger = logging.getLogger(__name__)
@@ -54,6 +59,44 @@ class EchoGate:
         return now >= self._playback_end + self._hangover_s
 
 
+class OutputMeter:
+    """Peak level of the agent's voice (0–1) with a short linear fade — drives the UI orb.
+
+    Fed from ``output()`` chunk enqueue times, which track playback closely
+    enough for a breathing light; not a real-time VU meter.
+    """
+
+    def __init__(self, fade_s: float = 0.7) -> None:
+        self._fade_s = fade_s
+        self._peak = 0.0
+        self._at = float("-inf")
+
+    def note_output(self, audio: bytes, now: float) -> None:
+        samples = array("h", audio[: len(audio) - (len(audio) % 2)])
+        peak = max((abs(s) for s in samples), default=0) / 32768
+        self._peak = max(peak, self.level(now))
+        self._at = now
+
+    def level(self, now: float) -> float:
+        fade = 1.0 - (now - self._at) / self._fade_s
+        return self._peak * fade if fade > 0 else 0.0
+
+    def reset(self) -> None:
+        self._peak, self._at = 0.0, float("-inf")
+
+
+def _greeting_variables(profile: Profile | None, hour: int) -> dict:
+    """Dynamic variables for the templated first message (persona.FIRST_MESSAGE)."""
+    if 5 <= hour < 12:
+        part_of_day = "morning"
+    elif 12 <= hour < 18:
+        part_of_day = "afternoon"
+    else:
+        part_of_day = "evening"
+    first_name = (profile.name or "").split()[0] if profile is not None and profile.name else ""
+    return {"part_of_day": part_of_day, "user_name_suffix": f", {first_name}" if first_name else ""}
+
+
 class JobvisSession:
     """Lifecycle and observable state of the voice conversation."""
 
@@ -63,6 +106,8 @@ class JobvisSession:
         self._transcript: list[tuple[str, str]] = []
         self._last_error = ""
         self._conversation = None
+        self._audio_interface = None
+        self._latency_ms: int | None = None
 
     # ---- observable state (polled by the UI Timer) ---------------------------
 
@@ -82,7 +127,7 @@ class JobvisSession:
             return False, "Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in .env first."
         try:
             from elevenlabs.client import ElevenLabs
-            from elevenlabs.conversational_ai.conversation import ClientTools, Conversation
+            from elevenlabs.conversational_ai.conversation import ClientTools, Conversation, ConversationInitiationData
         except ImportError as exc:
             return False, f"Voice extra not installed ({exc}) — brew install portaudio && uv sync --extra voice."
 
@@ -92,14 +137,20 @@ class JobvisSession:
 
         self._set("connecting")
         try:
+            audio_interface = _build_audio_interface(settings.jobvis_echo_gate)
+            greeting = ConversationInitiationData(
+                dynamic_variables=_greeting_variables(_bridge.get_bridge().snapshot().profile, datetime.now().hour)
+            )
             conversation = Conversation(
                 client=ElevenLabs(api_key=settings.elevenlabs_api_key.get_secret_value()),
                 agent_id=settings.elevenlabs_agent_id,
                 requires_auth=True,
-                audio_interface=_build_audio_interface(settings.jobvis_echo_gate),
+                config=greeting,
+                audio_interface=audio_interface,
                 client_tools=client_tools,
                 callback_agent_response=self._on_agent,
                 callback_user_transcript=self._on_user,
+                callback_latency_measurement=self._on_latency,
             )
             conversation.start_session()
         except Exception as exc:  # noqa: BLE001 - any SDK/mic failure must surface in the UI, not crash
@@ -108,6 +159,7 @@ class JobvisSession:
 
         with self._lock:
             self._conversation = conversation
+            self._audio_interface = audio_interface
         threading.Thread(target=self._wait, args=(conversation,), daemon=True, name="jobvis-session").start()
         self._set("active")
         self._log("system", "session started.")
@@ -122,6 +174,48 @@ class JobvisSession:
             except Exception as exc:  # noqa: BLE001 - best-effort shutdown
                 logger.warning("Jobvis end_session failed: %s", exc)
         self._set("idle")
+
+    # ---- proactivity (the JARVIS part) ---------------------------------------
+
+    def announce(self, text: str) -> bool:
+        """Make the agent SPEAK about a background event, unprompted.
+
+        Injects a user-message-typed event (the SDK's send_user_message) — the
+        one WS event that triggers a full spoken response; contextual updates
+        are silent by design. Returns False when no session is live (the
+        screen pop alone carries the news then).
+        """
+        with self._lock:
+            conversation = self._conversation
+        if conversation is None:
+            return False
+        try:
+            conversation.send_user_message(text)
+        except Exception as exc:  # noqa: BLE001 - a failed announcement must not break the pop
+            logger.warning("Jobvis announce failed: %s", exc)
+            return False
+        self._log("system", f"announced: {text}")
+        return True
+
+    def share_context(self, text: str) -> None:
+        """Silent situational awareness: colors the agent's next reply, no speech."""
+        with self._lock:
+            conversation = self._conversation
+        if conversation is None:
+            return
+        try:
+            conversation.send_contextual_update(text)
+        except Exception as exc:  # noqa: BLE001 - awareness is best-effort
+            logger.warning("Jobvis contextual update failed: %s", exc)
+
+    def hud(self) -> dict:
+        """Live HUD numbers for the UI: agent voice level (0–1) and last turn latency."""
+        with self._lock:
+            interface = self._audio_interface
+            latency = self._latency_ms
+        meter = getattr(interface, "meter", None)
+        level = meter.level(time.monotonic()) if meter is not None else 0.0
+        return {"level": round(level, 3), "latency_ms": latency}
 
     # ---- internals -----------------------------------------------------------
 
@@ -144,6 +238,10 @@ class JobvisSession:
 
     def _on_user(self, text: str) -> None:
         self._log("you", text)
+
+    def _on_latency(self, ms: int) -> None:
+        with self._lock:
+            self._latency_ms = int(ms)
 
     def _set(self, status: str, error: str = "") -> None:
         with self._lock:
@@ -182,39 +280,45 @@ class JobvisSession:
 
 
 def _build_audio_interface(gate_echo: bool):
-    """The SDK audio interface, optionally wrapped in the half-duplex echo gate."""
-    import time
+    """The SDK audio interface plus our instrumentation.
 
+    Always subclassed: the OutputMeter feeds the UI orb regardless; the
+    half-duplex echo gate is applied unless JOBVIS_ECHO_GATE=false (headphone
+    users trade it for barge-in).
+    """
     from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
 
-    if not gate_echo:
-        return DefaultAudioInterface()
-
-    class EchoGatedAudioInterface(DefaultAudioInterface):
-        """DefaultAudioInterface that feeds silence upstream while the agent speaks."""
+    class JobvisAudioInterface(DefaultAudioInterface):
+        """DefaultAudioInterface with voice-level metering and an optional echo gate."""
 
         def __init__(self) -> None:
             super().__init__()
-            self._gate = EchoGate()
+            self.meter = OutputMeter()
+            self._gate = EchoGate() if gate_echo else None
 
         def start(self, input_callback):
-            def gated(audio: bytes) -> None:
-                if self._gate.is_open(time.monotonic()):
-                    input_callback(audio)
-                else:
+            def wrapped(audio: bytes) -> None:
+                if self._gate is not None and not self._gate.is_open(time.monotonic()):
                     input_callback(b"\x00" * len(audio))  # keep the stream cadence, drop the echo
+                else:
+                    input_callback(audio)
 
-            super().start(gated)
+            super().start(wrapped)
 
         def output(self, audio: bytes) -> None:
-            self._gate.note_output(len(audio), time.monotonic())
+            now = time.monotonic()
+            self.meter.note_output(audio, now)
+            if self._gate is not None:
+                self._gate.note_output(len(audio), now)
             super().output(audio)
 
         def interrupt(self) -> None:
-            self._gate.reset()
+            self.meter.reset()
+            if self._gate is not None:
+                self._gate.reset()
             super().interrupt()
 
-    return EchoGatedAudioInterface()
+    return JobvisAudioInterface()
 
 
 _SESSION: JobvisSession | None = None

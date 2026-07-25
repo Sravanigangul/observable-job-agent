@@ -50,7 +50,15 @@ def build_tool_payload(spec: dict) -> dict:
 
 
 def build_agent_payload(voice_id: str | None) -> dict:
-    """The full agent configuration pushed to ElevenLabs."""
+    """The full agent configuration pushed to ElevenLabs.
+
+    Latency choices are deliberate: flash_v2 TTS (~75ms; the API requires
+    turbo/flash v2 for English-language agents — flash_v2_5 is multilingual
+    only), an explicit fast LLM, eager turn-taking, and a spoken "One moment."
+    filler instead of dead air on slow thinks. asr.keywords boosts recognition
+    of the coinages the demo lives on. (tts.optimize_streaming_latency is
+    deprecated — a no-op.)
+    """
     payload = {
         "name": AGENT_NAME,
         "conversation_config": {
@@ -59,13 +67,21 @@ def build_agent_payload(voice_id: str | None) -> dict:
                 "language": "en",
                 "prompt": {
                     "prompt": JOBVIS_SYSTEM_PROMPT,
+                    "llm": "gemini-2.5-flash",
                     "tools": [build_tool_payload(spec) for spec in TOOL_SPECS],
                 },
             },
+            "tts": {"model_id": "eleven_flash_v2"},
+            "turn": {
+                "turn_timeout": 7,
+                "turn_eagerness": "eager",
+                "soft_timeout_config": {"timeout_seconds": 3, "message": "One moment."},
+            },
+            "asr": {"keywords": ["Jobvis", "tailor", "CV", "cover letter"]},
         },
     }
     if voice_id:
-        payload["conversation_config"]["tts"] = {"voice_id": voice_id}
+        payload["conversation_config"]["tts"]["voice_id"] = voice_id
     return payload
 
 
