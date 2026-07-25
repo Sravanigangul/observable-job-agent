@@ -645,12 +645,15 @@ def on_voice_toggle():
 
 
 def on_voice_tick():
-    """Poll the voice session; push a finished voice-triggered run into the wizard.
+    """Poll the voice session; keep the wizard in sync with a voice-triggered run.
 
-    Most ticks are no-ops beyond the status/transcript refresh. When the bridge
-    hands over a finished run, the SAME renderers the click path uses fill the
-    step pages: a search pops step 3, a tailoring pops step 4 with the PDF —
-    even if the user hung up the voice session during the wait.
+    Most ticks are no-ops beyond the status/transcript refresh. While a run is
+    IN FLIGHT the tick mirrors the click path's loading view — the right step
+    page shows the runner's live status lines ("ranking 12 jobs…"), so the
+    screen never sits frozen while Jobvis works. When the bridge hands over the
+    finished run, the SAME renderers the click path uses fill the pages: a
+    search pops step 3, a tailoring pops step 4 with the PDF — even if the user
+    hung up the voice session during the wait.
     """
     from job_scout.voice import get_voice_session  # lazy: needs the voice extra
 
@@ -660,7 +663,41 @@ def on_voice_tick():
     transcript = _transcript_html(lines)
     no = gr.update()
 
-    run = voice_bridge.get_bridge().pop_finished_run()
+    bridge = voice_bridge.get_bridge()
+    run = bridge.pop_finished_run()
+    if run is None:
+        progress = bridge.run_status()
+        if progress.get("running"):
+            loading = _loading_html(str(progress.get("latest_status") or "working…"))
+            if progress.get("kind") == "search":
+                return (
+                    status_html,
+                    transcript,
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(visible=False),
+                    loading,
+                    "",
+                    no,
+                    no,
+                    no,
+                    no,
+                    no,
+                )
+            return (
+                status_html,
+                transcript,
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=True),
+                no,
+                no,
+                no,
+                loading,
+                "",
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
     if run is not None:
         session.announce(_run_announcement(run))  # the butler brings the news himself
     if run is not None and run.kind == "search" and run.search_result is not None and not run.failed:

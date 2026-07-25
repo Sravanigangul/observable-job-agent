@@ -111,6 +111,57 @@ def test_voice_tick_pushes_finished_search_run(monkeypatch, sample_profile):
     assert "380 ms" in outputs[0]  # latency HUD
 
 
+def test_voice_tick_shows_live_progress_while_running(monkeypatch, sample_profile):
+    """While a voice-triggered run is in flight, the screen mirrors it — never frozen."""
+    import threading
+    import time
+
+    fresh = VoiceBridge()
+    monkeypatch.setattr(bridge_module, "_BRIDGE", fresh)
+    fresh.register_thread("t1")
+    fresh.record_profile(sample_profile, "cv text", "t1")
+
+    class FakeSession:
+        def snapshot(self):
+            return "active", [], ""
+
+        def hud(self):
+            return {"level": 0.0, "latency_ms": None}
+
+        def announce(self, text):
+            return True
+
+    import job_scout.voice as voice_pkg
+
+    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeSession())
+
+    release = threading.Event()
+
+    def slow_stream(profile, **kw):
+        yield ("status", "ranking 12 jobs…")
+        release.wait(timeout=5)
+        yield ("result", RunResult())
+
+    monkeypatch.setattr(bridge_module, "stream_search", slow_stream)
+    assert fresh.start_search() is None
+    for _ in range(200):
+        if fresh.run_status().get("latest_status") == "ranking 12 jobs…":
+            break
+        time.sleep(0.01)
+
+    outputs = app_module.on_voice_tick()
+    assert outputs[3]["visible"] is True  # step 3 already shown while the search runs
+    assert "ranking 12 jobs…" in outputs[5]  # the runner's live status line, on screen
+
+    release.set()
+    for _ in range(200):
+        if fresh.run_status()["done"]:
+            break
+        time.sleep(0.01)
+    outputs = app_module.on_voice_tick()
+    assert outputs[3]["visible"] is True  # the finished pop still renders the results
+
+
 def _search_run(ranked_jobs):
     from job_scout.voice.bridge import VoiceRun
 
