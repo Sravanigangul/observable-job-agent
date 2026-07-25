@@ -15,7 +15,11 @@ from job_scout.graph.state import AgentState
 from job_scout.llm import ensure_budget, get_chat_model
 from job_scout.tools.jobs_api import run_search, search_jobs
 
-CAP = 25
+# Per-fetch limit comes from settings (SCOUT_MAX_JOBS, default 10 — it drives
+# ranking latency directly: 10 jobs = 2 LLM batches ≈ half a minute end to end).
+# The merged ceiling bounds growth across reformulation loops, so a broadened
+# search can still ADD jobs beyond the per-fetch limit without ballooning.
+MERGED_CEILING = 25
 
 _SYSTEM = (
     "You are a job search assistant. Call the search_jobs tool exactly once. "
@@ -69,8 +73,8 @@ def fetch_jobs(state: AgentState) -> dict:
         country = None
         remote = profile.remote_ok
 
-    jobs, sources = run_search(query=query, location=location, country=country, remote=remote, limit=CAP)
-    jobs = _dedupe_with_existing(state.get("jobs", []), jobs)[:CAP]
+    jobs, sources = run_search(query=query, location=location, country=country, remote=remote, limit=settings.scout_max_jobs)
+    jobs = _dedupe_with_existing(state.get("jobs", []), jobs)[:MERGED_CEILING]
 
     return {
         "jobs": jobs,

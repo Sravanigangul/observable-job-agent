@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     jobvis_echo_gate: bool = Field(default=True, alias="JOBVIS_ECHO_GATE")
 
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
+    scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")
 
     @field_validator(
         "opik_workspace",

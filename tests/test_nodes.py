@@ -74,3 +74,59 @@ def test_reformulate_increments_counter(monkeypatch, sample_profile):
     assert out["search_query"] == "data analyst"
     assert out["reformulation_count"] == 1
     assert out["llm_calls"] == 4
+
+
+def test_rank_jobs_skips_already_scored(monkeypatch, sample_profile):
+    """Reformulation loops must not re-spend LLM calls on jobs already scored."""
+    from job_scout.graph.schemas import RankedJob
+
+    jobs = [make_job(f"j{i}", f"Role {i}", f"Co{i}") for i in range(4)]
+    prior = [
+        RankedJob(job=jobs[0], fit_score=90, fit_explanation="kept"),
+        RankedJob(job=jobs[1], fit_score=40, fit_explanation="kept"),
+    ]
+    scored_ids = []
+
+    def fake_model(*a, **k):
+        llm = structured_llm(None)
+
+        def invoke(prompt):
+            ids = [j.job_id for j in jobs if f"job_id: {j.job_id}\n" in prompt]
+            scored_ids.extend(ids)
+            return JobScores(scores=[JobScore(job_id=i, fit_score=70, fit_explanation="new") for i in ids])
+
+        llm.with_structured_output.return_value.invoke.side_effect = invoke
+        return llm
+
+    monkeypatch.setattr(rank_mod, "get_chat_model", fake_model)
+    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "ranked_jobs": prior, "llm_calls": 0})
+    assert scored_ids == ["j2", "j3"]  # only the new postings hit the model
+    assert out["llm_calls"] == 1
+    assert len(out["ranked_jobs"]) == 4
+    assert out["ranked_jobs"][0].fit_score == 90  # prior scores kept, list re-sorted
+
+
+def test_rank_jobs_all_already_scored_is_free(sample_profile):
+    from job_scout.graph.schemas import RankedJob
+
+    jobs = [make_job("j1", "Role", "Co")]
+    prior = [RankedJob(job=jobs[0], fit_score=75, fit_explanation="kept")]
+    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "ranked_jobs": prior, "llm_calls": 3})
+    assert out["ranked_jobs"] == prior  # no model construction, no llm_calls key needed
+
+
+def test_fetch_jobs_limit_from_settings(monkeypatch, sample_profile, sample_jobs):
+    monkeypatch.setenv("SCOUT_MAX_JOBS", "3")
+    from job_scout.config import get_settings
+
+    get_settings.cache_clear()
+    seen = {}
+
+    def fake_run_search(**kwargs):
+        seen.update(kwargs)
+        return sample_jobs, ["cache"]
+
+    monkeypatch.setattr(fetch_mod, "run_search", fake_run_search)
+    monkeypatch.setattr(fetch_mod, "get_chat_model", lambda *a, **k: tool_calling_llm([{"args": {"query": "ds"}}]))
+    fetch_jobs({"profile": sample_profile, "llm_calls": 0})
+    assert seen["limit"] == 3

@@ -49,21 +49,33 @@ def _batches(items: list[JobPosting], size: int) -> Iterator[list[JobPosting]]:
 
 
 def rank_jobs(state: AgentState) -> dict:
-    """Score each fetched job against the profile and return them sorted by fit."""
+    """Score each fetched job against the profile and return them sorted by fit.
+
+    Jobs already scored in a previous pass (reformulation loops merge new
+    fetches into ``state["jobs"]``) keep their scores — the profile hasn't
+    changed, so re-scoring them would only re-spend the same LLM calls. Only
+    genuinely new postings go to the model.
+    """
     settings = get_settings()
     profile = state["profile"]
     jobs = state.get("jobs", [])
     if not jobs:
         return {"ranked_jobs": []}
 
-    by_id = {job.job_id: job for job in jobs}
+    ranked: list[RankedJob] = list(state.get("ranked_jobs") or [])
+    already_scored = {r.job.job_id for r in ranked}
+    to_score = [job for job in jobs if job.job_id not in already_scored]
+    if not to_score:
+        ranked.sort(key=lambda r: r.fit_score, reverse=True)
+        return {"ranked_jobs": ranked}
+
+    by_id = {job.job_id: job for job in to_score}
     calls = state.get("llm_calls", 0)
-    n_batches = (len(jobs) + BATCH_SIZE - 1) // BATCH_SIZE
+    n_batches = (len(to_score) + BATCH_SIZE - 1) // BATCH_SIZE
     ensure_budget(calls, n_batches, settings.max_llm_calls_per_run)
 
     model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(JobScores)
-    ranked: list[RankedJob] = []
-    for batch in _batches(jobs, BATCH_SIZE):
+    for batch in _batches(to_score, BATCH_SIZE):
         prompt = RANK_JOBS_PROMPT.format(profile=_render_profile(profile), jobs=_render_jobs(batch))
         result: JobScores = model.invoke(prompt)
         calls += 1
