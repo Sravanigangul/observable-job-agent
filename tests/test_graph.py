@@ -48,3 +48,13 @@ def test_get_compiled_graph_is_process_singleton():
     # One graph + one checkpointer per process is what lets the tailor
     # invocation read the search invocation's thread state.
     assert get_compiled_graph() is get_compiled_graph()
+
+
+def test_should_reformulate_respects_demo_mode(monkeypatch, sample_profile):
+    """SCOUT_MAX_REFORMULATIONS=0 → one pass, no loops, regardless of thin fits."""
+    from job_scout.config import get_settings
+
+    monkeypatch.setenv("SCOUT_MAX_REFORMULATIONS", "0")
+    get_settings.cache_clear()
+    state = {"profile": sample_profile, "ranked_jobs": [], "reformulation_count": 0}
+    assert should_reformulate(state) == END

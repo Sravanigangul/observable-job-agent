@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
     scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")
+    scout_max_reformulations: int = Field(default=2, alias="SCOUT_MAX_REFORMULATIONS")
 
     @field_validator(
         "opik_workspace",

@@ -91,11 +91,17 @@ def should_reformulate(state: AgentState) -> str:
 
     Loops only if there are fewer than ``MIN_GOOD_JOBS`` jobs scoring at least
     ``GOOD_FIT_THRESHOLD`` and we are under the reformulation cap. Reaching the
-    cap with thin results is expected, not an error.
+    cap with thin results is expected, not an error. The cap defaults to
+    ``MAX_REFORMULATIONS`` but SCOUT_MAX_REFORMULATIONS can lower it (0 = one
+    pass, no loops — demo/latency mode); the conditional edge itself is the
+    lesson and stays.
     """
+    from job_scout.config import get_settings
+
+    cap = min(MAX_REFORMULATIONS, get_settings().scout_max_reformulations)
     ranked = state.get("ranked_jobs", [])
     good = sum(1 for r in ranked if r.fit_score >= GOOD_FIT_THRESHOLD)
-    if good < MIN_GOOD_JOBS and state.get("reformulation_count", 0) < MAX_REFORMULATIONS:
+    if good < MIN_GOOD_JOBS and state.get("reformulation_count", 0) < cap:
         return "reformulate_query"
     return END
 

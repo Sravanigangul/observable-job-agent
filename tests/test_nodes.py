@@ -130,3 +130,28 @@ def test_fetch_jobs_limit_from_settings(monkeypatch, sample_profile, sample_jobs
     monkeypatch.setattr(fetch_mod, "get_chat_model", lambda *a, **k: tool_calling_llm([{"args": {"query": "ds"}}]))
     fetch_jobs({"profile": sample_profile, "llm_calls": 0})
     assert seen["limit"] == 3
+
+
+def test_rank_jobs_batches_run_in_parallel(monkeypatch, sample_profile):
+    """Two batches must overlap in time — ranking latency is max(batch), not sum."""
+    import time as _time
+
+    jobs = [make_job(f"j{i}", f"Role {i}", f"Co{i}") for i in range(10)]
+
+    def fake_model(*a, **k):
+        llm = structured_llm(None)
+
+        def invoke(prompt):
+            _time.sleep(0.3)
+            ids = [j.job_id for j in jobs if f"job_id: {j.job_id}\n" in prompt]
+            return JobScores(scores=[JobScore(job_id=i, fit_score=70, fit_explanation="ok") for i in ids])
+
+        llm.with_structured_output.return_value.invoke.side_effect = invoke
+        return llm
+
+    monkeypatch.setattr(rank_mod, "get_chat_model", fake_model)
+    start = _time.monotonic()
+    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "llm_calls": 0})
+    elapsed = _time.monotonic() - start
+    assert len(out["ranked_jobs"]) == 10
+    assert elapsed < 0.55, f"batches ran serially ({elapsed:.2f}s for 2×0.3s sleeps)"

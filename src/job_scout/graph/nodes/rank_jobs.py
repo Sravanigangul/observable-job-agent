@@ -6,7 +6,9 @@ to its ``JobPosting`` to build a ``RankedJob``.
 
 from __future__ import annotations
 
+import contextvars
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 from job_scout.config import get_settings
 from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT
@@ -15,6 +17,7 @@ from job_scout.graph.state import AgentState
 from job_scout.llm import ensure_budget, get_chat_model
 
 BATCH_SIZE = 5
+MAX_PARALLEL_BATCHES = 4
 
 
 def _render_profile(profile: Profile) -> str:
@@ -75,10 +78,25 @@ def rank_jobs(state: AgentState) -> dict:
     ensure_budget(calls, n_batches, settings.max_llm_calls_per_run)
 
     model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(JobScores)
-    for batch in _batches(to_score, BATCH_SIZE):
+
+    def score_batch(batch: list[JobPosting]) -> JobScores:
         prompt = RANK_JOBS_PROMPT.format(profile=_render_profile(profile), jobs=_render_jobs(batch))
-        result: JobScores = model.invoke(prompt)
-        calls += 1
+        return model.invoke(prompt)
+
+    # Batches are independent, so they run concurrently — ranking latency is the
+    # slowest batch, not the sum. copy_context() carries LangChain's callback
+    # contextvars into the worker threads, so Opik spans and token/cost tracking
+    # still attach to the run (the whole point of this repo).
+    batches = list(_batches(to_score, BATCH_SIZE))
+    if len(batches) == 1:
+        results = [score_batch(batches[0])]
+    else:
+        with ThreadPoolExecutor(max_workers=min(len(batches), MAX_PARALLEL_BATCHES)) as pool:
+            futures = [pool.submit(contextvars.copy_context().run, score_batch, batch) for batch in batches]
+            results = [future.result() for future in futures]
+    calls += len(batches)
+
+    for result in results:
         for score in result.scores:
             job = by_id.get(score.job_id)
             if job is None:
