@@ -42,6 +42,19 @@ def _clear_settings_cache():
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_candidate_store(tmp_path, monkeypatch):
+    """No test may touch the REAL persisted candidate (data/candidate/).
+
+    A bare reset() call in a handler test once wiped a user's stored CV —
+    every test now gets a throwaway store; per-test fixtures may re-patch.
+    """
+    import job_scout.candidate_store as candidate_store
+
+    monkeypatch.setattr(candidate_store, "_STORE_DIR", tmp_path / "candidate")
+    monkeypatch.setattr(candidate_store, "_STORE_PATH", tmp_path / "candidate" / "profile.json")
+
+
 @pytest.fixture
 def sample_profile() -> Profile:
     return Profile(

@@ -96,9 +96,9 @@ keyword boosting stops "Jobvis" and "CV" being mis-heard; and the console orb
 is driven by the actual PCM level of Jobvis's voice (computed in the audio
 interface — no SDK support needed) with a live latency readout beside it.
 
-## Jarvis mode — the voice-first tab (/jarvis)
+## Jarvis mode — the voice-first tab (port 7861)
 
-The main app keeps the manual click-flow; **http://localhost:7860/jarvis/**
+The main app keeps the manual click-flow; **http://localhost:7861**
 (the "Jarvis mode ↗" link in the voice strip) is the same session as a
 full-dark, fully voice-directed console: a breathing orb driven by Jobvis's
 actual voice level, Engage/Stand down, a live top-matches panel, an
@@ -108,18 +108,20 @@ manual act) — then everything else happens by voice in this tab, with Jobvis
 leading: offer to search → offer the top three with matches and gaps → offer to
 tailor the CV and cover letter → announce the finished pack.
 
-Implementation notes (hard-won, for readers extending this):
-- It is a **separate Gradio app mounted next to the wizard** on one FastAPI
-  server (`gr.mount_gradio_app`), NOT a `demo.route` page — Gradio 6 multipage
-  dispatches the index page's auto-generated load events on every page, which
-  crashes the frontend when their outputs don't exist there. Two apps share
-  nothing in the browser and everything in the process (bridge, run manager,
-  voice session, candidate store).
-- Gradio 6 applies `theme`/`css` at **mount time**, not from the Blocks
-  constructor.
+Implementation notes (hard-won on Gradio 6.20, for readers extending this):
+- It is a **separate Gradio app on its own port** (7861), launched from the
+  same process as the wizard. Two architectures failed first: `demo.route`
+  multipage dispatches the index page's auto-generated load events on every
+  page, crashing the frontend where their outputs don't exist; and two apps
+  mounted on one FastAPI server (`gr.mount_gradio_app`) left the root app's
+  event stream answering 503. Two plain `launch()`es work — and their ORDER
+  matters: the app launched last (the blocking call) lost its event stream,
+  so the wizard launches first with `prevent_thread_lock=True`. The two apps
+  share nothing in the browser and everything in the process (bridge, run
+  manager, voice session, candidate store).
 - Keep `gr.Timer` at the Blocks **root**, not inside layout containers, and
-  wire a **priming `load` event**: a mounted app's client only opens its queue
-  connection on the first event — without it the Timer never starts.
+  give the console a **priming `load` event** that also fills the panels on
+  page open.
 
 ## Observability
 

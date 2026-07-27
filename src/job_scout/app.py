@@ -835,7 +835,7 @@ def _jarvis_results_html(values: dict, snap, progress: dict) -> str:
         )
     return (
         '<div class="jx-panel"><p class="jx-panel-title">No candidate</p>'
-        '<span class="jx-empty">Drop a CV in the <a href="/" style="color:#66D9A8">main app</a> once — '
+        '<span class="jx-empty">Drop a CV in the <a href="http://localhost:7860" style="color:#66D9A8">main app</a> once — '
         "Jobvis remembers it from then on.</span></div>"
     )
 
@@ -954,9 +954,8 @@ def _on_load(thread_id: str):
     """
     voice_bridge.get_bridge().register_thread(thread_id)
     stored = candidate_store.load_candidate()
-    off = gr.Timer(active=False)  # one-shot: the restore timer disarms itself
     if stored is None:
-        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), off)
+        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
     profile, cv_text = stored
     voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
     note = (
@@ -969,7 +968,6 @@ def _on_load(thread_id: str):
         _profile_html(profile) + note,
         cv_text,
         profile,
-        off,
     )
 
 
@@ -1124,7 +1122,7 @@ def build_app() -> gr.Blocks:
                 with gr.Row(elem_classes=["jv-row"]):
                     voice_btn = gr.Button("Talk to Jobvis", variant="secondary", size="sm", scale=0)
                     voice_status = gr.HTML(_voice_status_html("idle"))
-                    gr.HTML('<a class="jv-link" href="/jarvis/" target="_blank" rel="noopener">Jarvis mode ↗</a>')
+                    gr.HTML('<a class="jv-link" href="http://localhost:7861" target="_blank" rel="noopener">Jarvis mode ↗</a>')
                 with gr.Accordion("Transcript", open=False):
                     voice_transcript = gr.HTML(_transcript_html([]))
         else:
@@ -1232,15 +1230,15 @@ def build_app() -> gr.Blocks:
                     tex_btn,
                 ],
             )
-        # One-shot restore on page load. Deliberately a Timer, not demo.load:
-        # load events dispatch on EVERY page of a multipage app, and their
-        # outputs referencing index-page components crash the /jarvis frontend.
-        # A Timer is a page-scoped component, so this cannot leak.
-        restore_timer = gr.Timer(0.2)
-        restore_timer.tick(
+        # Restore on page load. A load event (not a Timer): on a MOUNTED app the
+        # client only opens its event connection on the first event, so a timer
+        # never fires unprimed — the /jarvis page hit the same bug. demo.load is
+        # safe on a standalone mounted app; it was only demo.route multipage
+        # that crashed on cross-page load events.
+        demo.load(
             _on_load,
             inputs=[thread_id],
-            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state, restore_timer],
+            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state],
         )
 
     return demo
@@ -1269,24 +1267,22 @@ def build_jarvis_app() -> gr.Blocks:
     return jarvis
 
 
+JARVIS_PORT = 7861
+
+
 def main() -> None:
-    """Serve the wizard at / and the Jarvis console at /jarvis on one server."""
-    import uvicorn
-    from fastapi import FastAPI
-    from fastapi.responses import RedirectResponse
+    """Serve the wizard on :7860 and the Jarvis console on :7861 — one process.
 
-    server = FastAPI()
-    # Gradio 6 applies theme/css at launch/mount time, not from the Blocks ctor.
-    server = gr.mount_gradio_app(server, build_jarvis_app(), path="/jarvis", theme=THEME, css=CSS)
-
-    # The root app's routes would swallow the bare path before Starlette's
-    # slash-redirect fires, so register the redirect ahead of the root mount.
-    @server.get("/jarvis")
-    def _jarvis_redirect() -> RedirectResponse:
-        return RedirectResponse(url="/jarvis/")
-
-    server = gr.mount_gradio_app(server, build_app(), path="/", theme=THEME, css=CSS)
-    uvicorn.run(server, host="127.0.0.1", port=7860)
+    Two launch()es rather than gr.mount_gradio_app, and the ORDER matters —
+    both learned the hard way (Gradio 6.20): mounting two apps on one FastAPI
+    server left the root app's queue/data stream answering 503, and with two
+    launches the app launched LAST with the blocking call was the one whose
+    events never reached the browser. Wizard first (prevent_thread_lock),
+    Jarvis last: both verified healthy. The process-wide bridge shares all
+    state between the two regardless of ports.
+    """
+    build_app().launch(server_name="127.0.0.1", server_port=7860, theme=THEME, css=CSS, prevent_thread_lock=True)
+    build_jarvis_app().launch(server_name="127.0.0.1", server_port=JARVIS_PORT, theme=THEME, css=CSS)
 
 
 if __name__ == "__main__":

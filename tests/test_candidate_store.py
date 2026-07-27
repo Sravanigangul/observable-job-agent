@@ -49,9 +49,8 @@ def fresh_bridge(monkeypatch) -> VoiceBridge:
 
 
 def test_on_load_without_store_is_a_noop(tmp_store, fresh_bridge):
-    *updates, timer_off = app_module._on_load("t1")
+    updates = app_module._on_load("t1")
     assert all("visible" not in update for update in updates)
-    assert timer_off.active is False  # the one-shot restore timer disarms itself
     assert fresh_bridge.snapshot().thread_id == "t1"
     assert fresh_bridge.snapshot().profile is None
 
@@ -59,8 +58,7 @@ def test_on_load_without_store_is_a_noop(tmp_store, fresh_bridge):
 def test_on_load_restores_candidate_and_opens_step_two(tmp_store, fresh_bridge, sample_profile):
     tmp_store.save_candidate(sample_profile, "cv text here")
 
-    page_start, page_profile, profile_html, cv_text, profile, timer_off = app_module._on_load("t1")
-    assert timer_off.active is False
+    page_start, page_profile, profile_html, cv_text, profile = app_module._on_load("t1")
 
     assert page_start["visible"] is False and page_profile["visible"] is True
     assert "Test Candidate" in profile_html and "Restored from your last session" in profile_html

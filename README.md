@@ -166,7 +166,7 @@ Jobs are deliberately *not* persisted (postings go stale): each session
 fetches fresh, one spoken "find me jobs" away.
 
 Two surfaces, one session: the wizard at `/` for the manual click-flow, and
-**Jarvis mode** at `/jarvis/` — a full-dark voice console (breathing orb, live
+**Jarvis mode** at http://localhost:7861 — a full-dark voice console (breathing orb, live
 top-matches, application panel with PDF downloads) where everything after the
 CV upload happens by voice, with Jobvis leading each step.
 
