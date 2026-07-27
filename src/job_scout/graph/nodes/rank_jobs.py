@@ -16,7 +16,9 @@ from job_scout.graph.schemas import JobPosting, JobScores, Profile, RankedJob
 from job_scout.graph.state import AgentState
 from job_scout.llm import ensure_budget, get_chat_model
 
-BATCH_SIZE = 5
+# Batch size is a latency knob (SCOUT_RANK_BATCH): output tokens — and so batch
+# latency — scale with jobs per batch, and batches run in parallel, so smaller
+# batches shave the slowest-batch time at the cost of a few more LLM calls.
 MAX_PARALLEL_BATCHES = 4
 
 
@@ -74,7 +76,8 @@ def rank_jobs(state: AgentState) -> dict:
 
     by_id = {job.job_id: job for job in to_score}
     calls = state.get("llm_calls", 0)
-    n_batches = (len(to_score) + BATCH_SIZE - 1) // BATCH_SIZE
+    batch_size = settings.scout_rank_batch
+    n_batches = (len(to_score) + batch_size - 1) // batch_size
     ensure_budget(calls, n_batches, settings.max_llm_calls_per_run)
 
     model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(JobScores)
@@ -87,7 +90,7 @@ def rank_jobs(state: AgentState) -> dict:
     # slowest batch, not the sum. copy_context() carries LangChain's callback
     # contextvars into the worker threads, so Opik spans and token/cost tracking
     # still attach to the run (the whole point of this repo).
-    batches = list(_batches(to_score, BATCH_SIZE))
+    batches = list(_batches(to_score, batch_size))
     if len(batches) == 1:
         results = [score_batch(batches[0])]
     else:

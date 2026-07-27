@@ -57,7 +57,10 @@ def fetch_jobs(state: AgentState) -> dict:
     profile = state["profile"]
     errors = list(state.get("errors", []))
 
-    model = get_chat_model(settings.scout_model, temperature=0.0).bind_tools([search_jobs])
+    # Choosing tool arguments is a trivial call — SCOUT_FETCH_MODEL lets a
+    # small/fast model do it (~1s instead of ~3s) without touching ranking.
+    model_name = settings.scout_fetch_model or settings.scout_model
+    model = get_chat_model(model_name, temperature=0.0).bind_tools([search_jobs])
     message = model.invoke([SystemMessage(_SYSTEM), HumanMessage(_build_prompt(state))])
     calls += 1
 

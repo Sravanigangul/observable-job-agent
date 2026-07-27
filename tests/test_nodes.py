@@ -155,3 +155,20 @@ def test_rank_jobs_batches_run_in_parallel(monkeypatch, sample_profile):
     elapsed = _time.monotonic() - start
     assert len(out["ranked_jobs"]) == 10
     assert elapsed < 0.55, f"batches ran serially ({elapsed:.2f}s for 2×0.3s sleeps)"
+
+
+def test_fetch_jobs_model_override(monkeypatch, sample_profile, sample_jobs):
+    monkeypatch.setenv("SCOUT_FETCH_MODEL", "openai:tiny-model")
+    from job_scout.config import get_settings
+
+    get_settings.cache_clear()
+    seen = {}
+
+    def fake_get_chat_model(name, **kwargs):
+        seen["model"] = name
+        return tool_calling_llm([{"args": {"query": "ds"}}])
+
+    monkeypatch.setattr(fetch_mod, "get_chat_model", fake_get_chat_model)
+    monkeypatch.setattr(fetch_mod, "run_search", lambda **k: (sample_jobs, ["cache"]))
+    fetch_jobs({"profile": sample_profile, "llm_calls": 0})
+    assert seen["model"] == "openai:tiny-model"

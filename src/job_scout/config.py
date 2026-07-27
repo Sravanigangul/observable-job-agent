@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
     scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")
     scout_max_reformulations: int = Field(default=2, alias="SCOUT_MAX_REFORMULATIONS")
+    scout_fetch_model: str = Field(default="", alias="SCOUT_FETCH_MODEL")
+    scout_rank_batch: int = Field(default=4, alias="SCOUT_RANK_BATCH")
 
     fab_bullet_ratio: float = Field(default=0.65, alias="SCOUT_FAB_BULLET_RATIO")
     fab_skill_ratio: float = Field(default=0.85, alias="SCOUT_FAB_SKILL_RATIO")
@@ -63,6 +65,7 @@ class Settings(BaseSettings):
         "opik_project_name",
         "scout_model",
         "scout_tailor_model",
+        "scout_fetch_model",
         "elevenlabs_agent_id",
         "elevenlabs_voice_id",
         mode="before",

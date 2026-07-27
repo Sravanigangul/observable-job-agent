@@ -216,7 +216,7 @@ observable-job-agent/
 ├── scripts/            # run_batch.py, run_tailor_batch.py, build_*_dataset.py, run_evals.py,
 │                       # setup_annotation_queue.py, snapshot_jobs.py, generate_fixture_*.py
 ├── data/               # cached_jobs.json, fixture_cvs/, fixture_linkedin/, labels/ (hand labels)
-├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md
+├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md, optimizing_latency.md
 ├── reports/            # baseline.json, tailor_batch.json, phase*_findings.md, phase2_eval_report.md
 └── tests/              # 100+ tests (LLM mocked, network mocked, Opik off)
 ```

@@ -23,6 +23,8 @@ os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 # change test behavior.
 os.environ["SCOUT_MAX_JOBS"] = "10"
 os.environ["SCOUT_MAX_REFORMULATIONS"] = "2"
+os.environ["SCOUT_FETCH_MODEL"] = ""
+os.environ["SCOUT_RANK_BATCH"] = "4"
 os.environ["SCOUT_FAB_BULLET_RATIO"] = "0.65"
 os.environ["SCOUT_FAB_SKILL_RATIO"] = "0.85"
 os.environ["SCOUT_FAB_LETTER_RATIO"] = "0.55"
