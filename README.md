@@ -159,9 +159,11 @@ make app-voice           # `make app` + the voice extra — the Jobvis strip app
 (Plain `make app` re-syncs the venv *without* the extra — uv strips it — so use
 `make app-voice` whenever you want the voice strip.)
 
-Job Scout **remembers your resume between runs**: the extracted profile is
-saved locally (`data/candidate/`, gitignored), so a restart opens straight on
-step 2 and Jobvis knows you immediately — "Start over" is what forgets it.
+Job Scout **remembers your resume between runs** — and **where you want to
+work**: the extracted profile and your chosen search locations (the step-2
+"Where should we search?" chooser; the model suggests, you decide) are saved
+locally (`data/candidate/`, gitignored), so a restart opens straight on step 2
+and Jobvis knows you immediately — "Start over" is what forgets it.
 Jobs are deliberately *not* persisted (postings go stale): each session
 fetches fresh, one spoken "find me jobs" away.
 

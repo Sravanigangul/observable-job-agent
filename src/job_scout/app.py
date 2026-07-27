@@ -3,7 +3,8 @@
 A four-step wizard with a refined editorial look: warm-paper background with a
 faint gradient-and-grain wash, a display serif (Fraunces) paired with a mono for
 data (IBM Plex Mono), emerald accent. The flow is (1) drop your resume,
-(2) review the extracted profile, (3) find jobs — ranked as cards with a
+(2) review the extracted profile and choose where to search (the human decides
+locations and remote, not the model), (3) find jobs — ranked as cards with a
 conic-gauge fit score, matched-skill chips, and honest gaps — and (4) tailor an
 application for a selected job: cover letter + reworded CV, every claim checked
 against the resume, downloadable as PDF/.tex.
