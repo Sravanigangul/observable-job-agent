@@ -795,7 +795,7 @@ def _ensure_jarvis_session() -> None:
     bridge.register_thread(thread_id)
     stored = candidate_store.load_candidate()
     if stored is not None:
-        bridge.record_profile(stored[0], stored[1], thread_id)
+        bridge.record_profile(_apply_preferences(stored.profile, stored.preferences), stored.cv_text, thread_id)
 
 
 def _jarvis_orb_html(status: str, hud: dict | None, error: str = "") -> str:
@@ -943,21 +943,78 @@ def _build_jarvis_page(voice_ok: bool, voice_hint: str) -> list | None:
     return outputs
 
 
+REMOTE_CHOICE = "Remote (anywhere)"
+
+
+def _selection_to_prefs(selection: list[str]) -> dict:
+    """The chooser's ticked boxes as a preferences dict."""
+    return {"locations": [s for s in selection if s != REMOTE_CHOICE], "remote": REMOTE_CHOICE in selection}
+
+
+def _apply_preferences(profile: Profile, preferences: dict | None) -> Profile:
+    """The profile the SEARCH sees: extraction fields overridden by the human's choice.
+
+    The stored profile stays untouched — it is what the extractor measured and
+    what evaluation grades. Only the search runs on the chosen locations.
+    """
+    if not preferences:
+        return profile
+    return profile.model_copy(
+        update={"locations": list(preferences.get("locations") or []), "remote_ok": bool(preferences.get("remote"))}
+    )
+
+
+def _preference_selection(profile: Profile, preferences: dict | None) -> tuple[list[str], list[str]]:
+    """(choices, selected) for the chooser — stored preferences win, else the extraction's suggestion."""
+    if preferences:
+        locations = [loc for loc in (preferences.get("locations") or []) if loc]
+        remote = bool(preferences.get("remote"))
+    else:
+        locations, remote = list(profile.locations), bool(profile.remote_ok)
+    choices = [*dict.fromkeys([*profile.locations, *locations]), REMOTE_CHOICE]
+    return choices, [*locations, *([REMOTE_CHOICE] if remote else [])]
+
+
+def on_prefs_change(selection: list[str], profile: Profile | None, cv_text: str, thread_id: str) -> None:
+    """Persist the chooser's state and keep the voice bridge on the same page."""
+    if profile is None:
+        return
+    prefs = _selection_to_prefs(selection)
+    voice_bridge.get_bridge().record_profile(_apply_preferences(profile, prefs), cv_text, thread_id)
+    candidate_store.save_candidate(profile, cv_text, prefs)
+
+
+def on_add_location(new_location: str, choices: list[str], selection: list[str], profile, cv_text, thread_id):
+    """Add a typed location to the chooser, ticked, and persist.
+
+    Outputs: (loc_choices_state, loc_group, loc_new_textbox).
+    """
+    location = (new_location or "").strip()
+    if not location or location in choices:
+        return choices, gr.update(), ""
+    choices = [*choices[:-1], location, REMOTE_CHOICE] if choices else [location, REMOTE_CHOICE]
+    selection = [*selection, location]
+    on_prefs_change(selection, profile, cv_text, thread_id)  # programmatic updates don't fire .change
+    return choices, gr.update(choices=choices, value=selection), ""
+
+
 def _on_load(thread_id: str):
     """Register the wizard thread with the voice bridge and restore a saved candidate.
 
-    With a stored candidate the app opens on step 2 — profile shown, Find jobs
-    ready, Jobvis pre-seeded — and no LLM call happens (the extraction was paid
-    for when the CV was first uploaded). Jobs are NOT restored: results go
-    stale, so every session fetches fresh.
-    Outputs: (page_start, page_profile, profile_html, cv_text_state, profile_state).
+    With a stored candidate the app opens on step 2 — profile shown, chooser
+    restored, Find jobs ready, Jobvis pre-seeded — and no LLM call happens
+    (the extraction was paid for when the CV was first uploaded). Jobs are NOT
+    restored: results go stale, so every session fetches fresh.
+    Outputs: (page_start, page_profile, profile_html, cv_text_state,
+    profile_state, loc_choices_state, loc_group).
     """
     voice_bridge.get_bridge().register_thread(thread_id)
     stored = candidate_store.load_candidate()
     if stored is None:
-        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
-    profile, cv_text = stored
-    voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
+        return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+    choices, selected = _preference_selection(stored.profile, stored.preferences)
+    effective = _apply_preferences(stored.profile, stored.preferences)
+    voice_bridge.get_bridge().record_profile(effective, stored.cv_text, thread_id)
     note = (
         '<p class="js-muted" style="text-align:center;font-size:0.8rem;margin-top:10px">'
         "Restored from your last session — “Start over” forgets it.</p>"
@@ -965,44 +1022,54 @@ def _on_load(thread_id: str):
     return (
         gr.update(visible=False),
         gr.update(visible=True),
-        _profile_html(profile) + note,
-        cv_text,
-        profile,
+        _profile_html(stored.profile) + note,
+        stored.cv_text,
+        stored.profile,
+        choices,
+        gr.update(choices=choices, value=selected),
     )
 
 
 def on_upload(file_path: str | None, thread_id: str):
     """Step 1 → 2: read the resume, extract the profile, and reveal the profile page.
 
-    Outputs: (page_start, page_profile, profile_html, cv_text_state, start_status, profile_state).
+    The chooser is seeded with the extraction's locations/remote as a ticked
+    SUGGESTION — the human confirms or edits before any search runs.
+    Outputs: (page_start, page_profile, profile_html, cv_text_state,
+    start_status, profile_state, loc_choices_state, loc_group).
     """
     stay = gr.update(visible=True), gr.update(visible=False)
     go = gr.update(visible=False), gr.update(visible=True)
+    no = gr.update()
 
     if not file_path:
-        yield (*stay, gr.update(), "", _status("Please drop a PDF resume.", error=True), None)
+        yield (*stay, gr.update(), "", _status("Please drop a PDF resume.", error=True), None, no, no)
         return
     try:
         cv_text = extract_cv_text(file_path)
     except CVReadError as exc:
-        yield (*stay, gr.update(), "", _status(f"Could not read that PDF: {exc}", error=True), None)
+        yield (*stay, gr.update(), "", _status(f"Could not read that PDF: {exc}", error=True), None, no, no)
         return
 
-    yield (*go, _loading_html("Reading your resume…"), cv_text, "", gr.update())
+    yield (*go, _loading_html("Reading your resume…"), cv_text, "", gr.update(), no, no)
     try:
         profile = extract_profile(cv_text, thread_id=thread_id, tags=["phase-2", "ui", "extract"])
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
-        yield (*stay, gr.update(), "", _status(f"Couldn't read a profile: {exc}", error=True), None)
+        yield (*stay, gr.update(), "", _status(f"Couldn't read a profile: {exc}", error=True), None, no, no)
         return
+    choices, selected = _preference_selection(profile, None)
     voice_bridge.get_bridge().record_profile(profile, cv_text, thread_id)
-    candidate_store.save_candidate(profile, cv_text)
+    candidate_store.save_candidate(profile, cv_text, _selection_to_prefs(selected))
     _voice_context(f"Screen event: the user just uploaded a CV; a profile was extracted for {profile.name or 'the candidate'}.")
-    yield (*go, _profile_html(profile), cv_text, "", profile)
+    yield (*go, _profile_html(profile), cv_text, "", profile, choices, gr.update(choices=choices, value=selected))
 
 
-def on_find(cv_text: str, profile: Profile | None, thread_id: str):
-    """Step 2 → 3: run the job-finding graph for the extracted profile and stream results.
+def on_find(cv_text: str, profile: Profile | None, thread_id: str, loc_selection: list[str]):
+    """Step 2 → 3: run the job-finding graph for the chosen locations and stream results.
 
+    The search runs on the EFFECTIVE profile — extraction overridden by the
+    chooser's ticked locations/remote — so the model builds its query around
+    where the human actually wants to work, not where it guessed.
     Outputs: (page_profile, page_results, results_html, footer_html, job_select).
     """
     go = gr.update(visible=False), gr.update(visible=True)
@@ -1010,9 +1077,14 @@ def on_find(cv_text: str, profile: Profile | None, thread_id: str):
         yield (gr.update(visible=True), gr.update(visible=False), gr.update(), "", gr.update())
         return
 
+    prefs = _selection_to_prefs(loc_selection or [])
+    effective = _apply_preferences(profile, prefs)
+    voice_bridge.get_bridge().record_profile(effective, cv_text, thread_id)
+    candidate_store.save_candidate(profile, cv_text, prefs)
+
     yield (*go, _loading_html("Searching for jobs…"), "", gr.update())
     result = RunResult()
-    for kind, payload in stream_search(profile, cv_text=cv_text, thread_id=thread_id, tags=["phase-2", "ui"]):
+    for kind, payload in stream_search(effective, cv_text=cv_text, thread_id=thread_id, tags=["phase-2", "ui"]):
         if kind == "status":
             yield (*go, _loading_html(str(payload)), "", gr.update())
         elif kind == "result":
@@ -1076,7 +1148,8 @@ def reset():
 
     Outputs: (page_start, page_profile, page_results, page_tailor, cv_file,
     cv_text_state, start_status, results_html, footer_html, thread_id,
-    linkedin_zip_state, job_select, tailor_out, tailor_footer, pdf_btn, tex_btn).
+    linkedin_zip_state, job_select, tailor_out, tailor_footer, pdf_btn, tex_btn,
+    loc_choices_state, loc_group).
     """
     new_thread_id = str(uuid4())
     voice_bridge.get_bridge().register_thread(new_thread_id)
@@ -1098,6 +1171,8 @@ def reset():
         "",
         gr.update(visible=False),
         gr.update(visible=False),
+        [],
+        gr.update(choices=[], value=[]),
     )
 
 
@@ -1138,6 +1213,15 @@ def build_app() -> gr.Blocks:
             gr.HTML(_stepper(2))
             gr.HTML('<p class="js-section-label">Your profile</p>')
             profile_out = gr.HTML()
+            gr.HTML('<p class="js-section-label" style="margin-top:14px">Where should we search?</p>')
+            gr.HTML(
+                '<p class="js-muted" style="font-size:0.86rem">The boxes come from your resume — a suggestion, '
+                "not a decision. Tick where you actually want to work; add anywhere we missed.</p>"
+            )
+            loc_group = gr.CheckboxGroup(label="", choices=[], value=[], interactive=True)
+            with gr.Row():
+                loc_new = gr.Textbox(label="", placeholder="Add another location…", scale=4)
+                loc_add = gr.Button("Add", size="sm", scale=0)
             find_btn = gr.Button("Find jobs", variant="primary", size="lg")
             with gr.Accordion("Add your LinkedIn export (optional)", open=False):
                 gr.HTML(
@@ -1169,15 +1253,36 @@ def build_app() -> gr.Blocks:
             back_btn = gr.Button("Back to jobs", variant="secondary")
             restart_btn2 = gr.Button("Start over", variant="secondary")
 
+        loc_choices_state = gr.State([])
         cv_file.upload(
             on_upload,
             inputs=[cv_file, thread_id],
-            outputs=[page_start, page_profile, profile_out, cv_text_state, start_status, profile_state],
+            outputs=[
+                page_start,
+                page_profile,
+                profile_out,
+                cv_text_state,
+                start_status,
+                profile_state,
+                loc_choices_state,
+                loc_group,
+            ],
         )
         linkedin_file.change(on_zip, inputs=[linkedin_file], outputs=[linkedin_zip_state])
+        loc_group.input(on_prefs_change, inputs=[loc_group, profile_state, cv_text_state, thread_id])
+        loc_add.click(
+            on_add_location,
+            inputs=[loc_new, loc_choices_state, loc_group, profile_state, cv_text_state, thread_id],
+            outputs=[loc_choices_state, loc_group, loc_new],
+        )
+        loc_new.submit(
+            on_add_location,
+            inputs=[loc_new, loc_choices_state, loc_group, profile_state, cv_text_state, thread_id],
+            outputs=[loc_choices_state, loc_group, loc_new],
+        )
         find_btn.click(
             on_find,
-            inputs=[cv_text_state, profile_state, thread_id],
+            inputs=[cv_text_state, profile_state, thread_id, loc_group],
             outputs=[page_profile, page_results, results_out, footer_out, job_select],
         )
         tailor_btn.click(
@@ -1206,6 +1311,8 @@ def build_app() -> gr.Blocks:
             tailor_footer,
             pdf_btn,
             tex_btn,
+            loc_choices_state,
+            loc_group,
         ]
         change_btn.click(reset, outputs=reset_outputs)
         restart_btn.click(reset, outputs=reset_outputs)
@@ -1238,7 +1345,7 @@ def build_app() -> gr.Blocks:
         demo.load(
             _on_load,
             inputs=[thread_id],
-            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state],
+            outputs=[page_start, page_profile, profile_out, cv_text_state, profile_state, loc_choices_state, loc_group],
         )
 
     return demo

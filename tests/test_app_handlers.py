@@ -31,7 +31,7 @@ def _fake_stream(result):
 
 def test_on_find_populates_job_dropdown(monkeypatch, sample_profile):
     monkeypatch.setattr(app_mod, "stream_search", _fake_stream(_search_result()))
-    final = list(on_find("cv text", sample_profile, "t1"))[-1]
+    final = list(on_find("cv text", sample_profile, "t1", []))[-1]
     select = final[4]
     assert select["choices"] == [("Data Scientist — Acme (fit 88)", "j1")]
     assert select["visible"] is True
