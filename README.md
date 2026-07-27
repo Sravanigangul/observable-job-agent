@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/LangGraph-1.1+-ff6f00.svg" alt="LangGraph">
   <img src="https://img.shields.io/badge/Opik-observability-6f42c1.svg" alt="Opik">
   <img src="https://img.shields.io/badge/Gradio-5+-f97316.svg" alt="Gradio">
-  <img src="https://img.shields.io/badge/tests-35%20passing-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-190%20passing-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 

@@ -13,7 +13,7 @@ flowchart TB
   U(["User"]) -->|"upload CV (PDF)"| UI
 
   subgraph UI_L["Gradio UI · app.py"]
-    UI["3-step wizard<br/>Resume → Profile → Jobs<br/>streamed status · fit gauges · footer"]
+    UI["4-step wizard<br/>Resume → Profile → Jobs → Tailor<br/>streamed status · fit gauges · footer"]
   end
 
   UI -->|"filepath"| CVR["cv_reader.py<br/>pypdf: PDF → text"]
