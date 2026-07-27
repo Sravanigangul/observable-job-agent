@@ -129,7 +129,7 @@ extract_profile(cv) → Profile ─┐
 - **`fetch_jobs`** is an LLM tool-calling node: the model *chooses* the `search_jobs` arguments (query, country, remote).
 - **`rank_jobs`** scores postings in batches of 5, one structured-output call per batch, capped at `SCOUT_MAX_JOBS` (default 10). Already-scored jobs keep their scores across reformulation loops — only new postings hit the model.
 - **`reformulate_query`** broadens the search if fewer than 5 jobs score ≥ 60, bounded to at most 2 loops. That conditional edge is what makes this an agent rather than a straight-line workflow.
-- **`tailor`** (Phase 2) runs as a *second invocation on the same thread*: it reads the search results from the checkpoint and selects/rewords items from your **CandidateCorpus** (CV + optional official LinkedIn data export — never scraped). **`validate_tailoring`** then checks every claim deterministically. The PDF renders via `tectonic` (`brew install tectonic`); without it you get the `.tex` + an Overleaf pointer.
+- **`tailor`** (Phase 2) runs as a *second invocation on the same thread*: it reads the search results from the checkpoint and selects/rewords items from your **CandidateCorpus** (CV + optional official LinkedIn data export — never scraped). **`validate_tailoring`** then checks every claim deterministically — its thresholds are env-tunable (`SCOUT_FAB_*`), and each report records the values it ran with in the Opik trace, so tuning them against your own CV is a measurable exercise. The PDF renders via `tectonic` (`brew install tectonic`); without it you get the `.tex` + an Overleaf pointer.
 
 The search fans out over **JSearch** (primary, city-level), **Adzuna**
 (international), **Remotive** (keyless remote), and a **committed offline cache**.

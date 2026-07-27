@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from job_scout.corpus import build_corpus
+from job_scout.config import get_settings
+from job_scout.corpus import CandidateCorpus, CorpusItem, build_corpus
 from job_scout.graph.schemas import CVContent, ExperienceEntry, TailoredBullet, TailoringPack
-from job_scout.validation import (
-    BULLET_MATCH_THRESHOLD,
-    LETTER_MATCH_THRESHOLD,
-    SKILL_MATCH_THRESHOLD,
-    validate_pack,
-)
+from job_scout.validation import validate_pack
 from tests.test_corpus import SAMPLE_CV
 
 
@@ -31,11 +27,26 @@ def _pack(
     )
 
 
-def test_thresholds_are_documented_constants():
-    # Changing a threshold should be a conscious diff, not a drive-by tweak.
-    assert BULLET_MATCH_THRESHOLD == 0.75
-    assert SKILL_MATCH_THRESHOLD == 0.9
-    assert LETTER_MATCH_THRESHOLD == 0.55
+def test_threshold_defaults_are_documented():
+    # Changing a default should be a conscious diff, not a drive-by tweak.
+    # (Env-tunable via SCOUT_FAB_*; Phase 2 baselines ran at 0.75/0.9/0.55.)
+    settings = get_settings()
+    assert settings.fab_bullet_ratio == 0.65
+    assert settings.fab_skill_ratio == 0.85
+    assert settings.fab_letter_ratio == 0.55
+
+
+def test_thresholds_are_recorded_in_the_report():
+    report = validate_pack(_pack([]), _corpus())
+    assert report.thresholds == {"bullet": 0.65, "skill": 0.85, "letter": 0.55}
+
+
+def test_thresholds_are_env_tunable(monkeypatch):
+    monkeypatch.setenv("SCOUT_FAB_BULLET_RATIO", "0.99")
+    get_settings.cache_clear()
+    bullet = TailoredBullet(text="Built streaming ingestion pipelines handling 2M events/day", corpus_ref="cv-bullet-002")
+    report = validate_pack(_pack([bullet]), _corpus())
+    assert report.flags == 1  # the same close rewrite that passes at the default
 
 
 def test_close_rewrite_passes():
@@ -50,7 +61,7 @@ def test_fabricated_bullet_is_flagged():
     report = validate_pack(_pack([bullet]), _corpus())
     assert report.flags == 1
     assert report.flagged[0].where == "cv_bullet:cv-bullet-002"
-    assert report.flagged[0].best_match_ratio < BULLET_MATCH_THRESHOLD
+    assert report.flagged[0].best_match_ratio < get_settings().fab_bullet_ratio
 
 
 def test_unresolvable_corpus_ref_is_flagged():
@@ -69,6 +80,34 @@ def test_skill_outside_corpus_is_flagged():
 def test_skill_normalization_tolerates_case():
     report = validate_pack(_pack([], skills=["python", "SQL"]), _corpus())
     assert report.flags == 0
+
+
+def _corpus_without_skills_section() -> CandidateCorpus:
+    return CandidateCorpus(
+        items=[
+            CorpusItem(
+                id="cv-bullet-001",
+                text="Built Python and PySpark pipelines on AWS Bedrock",
+                kind="bullet",
+                source="cv",
+                section="Experience",
+            )
+        ]
+    )
+
+
+def test_skills_ground_in_full_text_when_no_skills_section_parsed():
+    # A CV whose layout defeats the skills-section heuristic must not flag
+    # every skill at 0.00 against an empty vocabulary.
+    report = validate_pack(_pack([], skills=["Python, PySpark", "AWS Bedrock"]), _corpus_without_skills_section())
+    assert report.flags == 0
+
+
+def test_ungrounded_skill_still_flagged_without_skills_section():
+    report = validate_pack(_pack([], skills=["Kubernetes"]), _corpus_without_skills_section())
+    assert report.flags == 1
+    assert "no skills section was parsed" in report.flagged[0].reason
+    assert "kubernetes" in report.flagged[0].reason
 
 
 def test_cover_letter_invented_metric_is_flagged():

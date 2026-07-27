@@ -18,10 +18,14 @@ os.environ["ADZUNA_APP_KEY"] = ""
 os.environ["JSEARCH_API_KEY"] = ""
 os.environ["TAVILY_API_KEY"] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
-# Pin search knobs to their defaults so a developer's .env demo tuning
-# (e.g. SCOUT_MAX_REFORMULATIONS=0) can't change test behavior.
+# Pin tunable knobs to their defaults so a developer's .env tuning
+# (e.g. SCOUT_MAX_REFORMULATIONS=0 or looser validator ratios) can't
+# change test behavior.
 os.environ["SCOUT_MAX_JOBS"] = "10"
 os.environ["SCOUT_MAX_REFORMULATIONS"] = "2"
+os.environ["SCOUT_FAB_BULLET_RATIO"] = "0.65"
+os.environ["SCOUT_FAB_SKILL_RATIO"] = "0.85"
+os.environ["SCOUT_FAB_LETTER_RATIO"] = "0.55"
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402

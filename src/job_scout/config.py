@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")
     scout_max_reformulations: int = Field(default=2, alias="SCOUT_MAX_REFORMULATIONS")
 
+    fab_bullet_ratio: float = Field(default=0.65, alias="SCOUT_FAB_BULLET_RATIO")
+    fab_skill_ratio: float = Field(default=0.85, alias="SCOUT_FAB_SKILL_RATIO")
+    fab_letter_ratio: float = Field(default=0.55, alias="SCOUT_FAB_LETTER_RATIO")
+
     @field_validator(
         "opik_workspace",
         "opik_project_name",

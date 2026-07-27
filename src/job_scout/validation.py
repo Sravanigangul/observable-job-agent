@@ -5,18 +5,27 @@ candidate corpus with plain string similarity — no LLM, no cost, same result
 every run. It flags what it cannot ground; it never retries or repairs. Flags
 flow to state, trace metadata, and a visible UI warning.
 
-Heuristics and their failure modes (documented, deliberately not tuned —
-Phase 3 owns improvement):
+Heuristics and their failure modes (documented, deliberately simple — tuning
+them is the reader's exercise):
 
-- ``BULLET_MATCH_THRESHOLD = 0.75``: a reworded bullet must reach a 0.75
-  normalized ``difflib.SequenceMatcher`` ratio against its referenced corpus
-  item. Aggressive-but-honest rewrites can land below this (false positive);
-  a fabricated detail inside an otherwise-copied bullet can pass (false
-  negative).
-- ``LETTER_MATCH_THRESHOLD = 0.55``: cover letters legitimately paraphrase, so
-  the sentence-level threshold is softer, and only "factual-looking" sentences
-  (a digit, a year, or a multi-word capitalized name) are checked at all.
-  Motivation/aspiration sentences are not verifiable and are skipped.
+- Bullet ratio (``SCOUT_FAB_BULLET_RATIO``, default 0.65): a reworded bullet
+  must reach this normalized ``difflib.SequenceMatcher`` ratio against its
+  referenced corpus item. Aggressive-but-honest rewrites can land below it
+  (false positive); a fabricated detail inside an otherwise-copied bullet can
+  pass (false negative).
+- Letter ratio (``SCOUT_FAB_LETTER_RATIO``, default 0.55): cover letters
+  legitimately paraphrase, so the sentence-level threshold is softer, and only
+  "factual-looking" sentences (a digit, a year, or a multi-word capitalized
+  name) are checked at all. Motivation sentences are unverifiable and skipped.
+- Skill ratio (``SCOUT_FAB_SKILL_RATIO``, default 0.85) applies when the CV
+  yielded a skills section; when the heuristic segmentation found NONE, each
+  skill is grounded in the full corpus text instead — flagging everything at
+  0.00 against an empty vocabulary is noise, not signal.
+
+All three are env knobs, and every ``FabricationReport`` records the values it
+ran with — the report reaches state, trace metadata, and the UI, so a tuning
+change is measurable run-to-run in Opik. (Phase 2's committed baselines were
+measured at 0.75/0.9/0.55.)
 """
 
 from __future__ import annotations
@@ -24,13 +33,12 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
+from job_scout.config import get_settings
 from job_scout.corpus import CandidateCorpus
 from job_scout.graph.schemas import FabricationReport, FlaggedClaim, TailoringPack
 
-BULLET_MATCH_THRESHOLD = 0.75
-SKILL_MATCH_THRESHOLD = 0.9
-LETTER_MATCH_THRESHOLD = 0.55
 _MIN_FACTUAL_SENTENCE_WORDS = 6
+_MIN_SKILL_TOKEN_CHARS = 3
 
 _PUNCT = re.compile(r"[^\w\s]")
 _WS = re.compile(r"\s+")
@@ -85,6 +93,10 @@ def validate_pack(
     ``job_context`` (e.g. job title and company) is added to the cover-letter
     reference texts so "I am applying for X at Y" is not flagged.
     """
+    settings = get_settings()
+    bullet_ratio = settings.fab_bullet_ratio
+    skill_ratio = settings.fab_skill_ratio
+    letter_ratio = settings.fab_letter_ratio
     flagged: list[FlaggedClaim] = []
     claims_checked = 0
 
@@ -103,30 +115,51 @@ def validate_pack(
                 )
                 continue
             ratio = _ratio(bullet.text, item.text)
-            if ratio < BULLET_MATCH_THRESHOLD:
+            if ratio < bullet_ratio:
                 flagged.append(
                     FlaggedClaim(
                         where=f"cv_bullet:{bullet.corpus_ref}",
                         text=bullet.text,
-                        reason=f"rewrite drifted too far from its corpus item (ratio {ratio:.2f} < {BULLET_MATCH_THRESHOLD})",
+                        reason=f"rewrite drifted too far from its corpus item (ratio {ratio:.2f} < {bullet_ratio})",
                         best_match_ratio=round(ratio, 3),
                     )
                 )
 
-    # 2. Skills: must come from the corpus skill vocabulary.
+    # 2. Skills: must come from the corpus skill vocabulary. When segmentation
+    #    parsed no skills section at all, fall back to grounding each skill's
+    #    words in the full corpus text — still deterministic, and the reason
+    #    names the real gap instead of flagging everything at 0.00.
     corpus_skills = corpus.skills()
+    full_corpus_text = _normalize(" ".join(item.text for item in corpus.items))
     for skill in pack.cv.skills:
         claims_checked += 1
-        best = _best_ratio(skill, corpus_skills)
-        if best < SKILL_MATCH_THRESHOLD:
-            flagged.append(
-                FlaggedClaim(
-                    where=f"skill:{skill}",
-                    text=skill,
-                    reason=f"skill is not in the candidate's corpus (best match {best:.2f})",
-                    best_match_ratio=round(best, 3),
+        if corpus_skills:
+            best = _best_ratio(skill, corpus_skills)
+            if best < skill_ratio:
+                flagged.append(
+                    FlaggedClaim(
+                        where=f"skill:{skill}",
+                        text=skill,
+                        reason=f"skill is not in the candidate's corpus (best match {best:.2f})",
+                        best_match_ratio=round(best, 3),
+                    )
                 )
-            )
+        else:
+            tokens = [t for t in _normalize(skill).split() if len(t) >= _MIN_SKILL_TOKEN_CHARS]
+            missing = [t for t in tokens if t not in full_corpus_text]
+            if missing:
+                found = 1 - len(missing) / len(tokens) if tokens else 0.0
+                flagged.append(
+                    FlaggedClaim(
+                        where=f"skill:{skill}",
+                        text=skill,
+                        reason=(
+                            "no skills section was parsed from the CV, and these words appear "
+                            f"nowhere in its text: {', '.join(missing)}"
+                        ),
+                        best_match_ratio=round(found, 3),
+                    )
+                )
 
     # 3. Cover letter: factual sentences must trace to the corpus, the research
     #    notes, or the job context.
@@ -141,7 +174,7 @@ def validate_pack(
             continue
         claims_checked += 1
         best = _best_ratio(sentence, references)
-        if best < LETTER_MATCH_THRESHOLD:
+        if best < letter_ratio:
             flagged.append(
                 FlaggedClaim(
                     where=f"cover_letter:sentence:{n}",
@@ -151,4 +184,9 @@ def validate_pack(
                 )
             )
 
-    return FabricationReport(flags=len(flagged), claims_checked=claims_checked, flagged=flagged)
+    return FabricationReport(
+        flags=len(flagged),
+        claims_checked=claims_checked,
+        flagged=flagged,
+        thresholds={"bullet": bullet_ratio, "skill": skill_ratio, "letter": letter_ratio},
+    )

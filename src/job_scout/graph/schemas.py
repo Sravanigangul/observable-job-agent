@@ -140,3 +140,6 @@ class FabricationReport(BaseModel):
     flags: int = 0
     claims_checked: int = 0
     flagged: list[FlaggedClaim] = Field(default_factory=list)
+    # The knob values this report ran with — recorded so every trace states
+    # what produced the flags, making threshold tuning measurable in Opik.
+    thresholds: dict[str, float] = Field(default_factory=dict)
