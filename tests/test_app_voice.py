@@ -6,6 +6,7 @@ import job_scout.app as app_module
 import job_scout.voice.bridge as bridge_module
 from job_scout.runner import RunResult, TailorResult
 from job_scout.voice.bridge import VoiceBridge
+from tests.conftest import FakeVoiceSession
 
 
 def test_build_app_without_voice(monkeypatch):
@@ -26,22 +27,9 @@ def test_voice_tick_pushes_finished_tailor_run(monkeypatch, sample_profile):
     fresh.register_thread("t1")
     fresh.record_profile(sample_profile, "cv text", "t1")
 
-    class FakeSession:
-        announced: list[str] = []
-
-        def snapshot(self):
-            return "idle", [("you", "tailor the second one")], ""
-
-        def hud(self):
-            return {"level": 0.0, "latency_ms": None}
-
-        def announce(self, text):
-            self.announced.append(text)
-            return True
-
     import job_scout.voice as voice_pkg
 
-    fake_session = FakeSession()
+    fake_session = FakeVoiceSession(lines=(("you", "tailor the second one"),))
     monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: fake_session)
 
     def run_and_finish(kind: str, result) -> None:
@@ -82,19 +70,9 @@ def test_voice_tick_pushes_finished_search_run(monkeypatch, sample_profile):
     fresh.register_thread("t1")
     fresh.record_profile(sample_profile, "cv text", "t1")
 
-    class FakeSession:
-        def snapshot(self):
-            return "active", [], ""
-
-        def hud(self):
-            return {"level": 0.42, "latency_ms": 380}
-
-        def announce(self, text):
-            return True
-
     import job_scout.voice as voice_pkg
 
-    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeSession())
+    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeVoiceSession(status="active", level=0.42, latency_ms=380))
     monkeypatch.setattr(bridge_module, "stream_search", lambda p, **kw: iter([("result", RunResult())]))
     assert fresh.start_search() is None
     import time
@@ -121,19 +99,9 @@ def test_voice_tick_shows_live_progress_while_running(monkeypatch, sample_profil
     fresh.register_thread("t1")
     fresh.record_profile(sample_profile, "cv text", "t1")
 
-    class FakeSession:
-        def snapshot(self):
-            return "active", [], ""
-
-        def hud(self):
-            return {"level": 0.0, "latency_ms": None}
-
-        def announce(self, text):
-            return True
-
     import job_scout.voice as voice_pkg
 
-    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeSession())
+    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeVoiceSession(status="active"))
 
     release = threading.Event()
 

@@ -90,7 +90,7 @@ Three design choices keep the long-running parts honest — and make the butler
 
 Smaller JARVIS touches: the greeting is personalized per session through
 dynamic variables ("Good evening, Shantanu" — from the persisted profile, no
-override-security settings needed); the agent runs `eleven_flash_v2_5` TTS with
+override-security settings needed); the agent runs `eleven_flash_v2` TTS with
 eager turn-taking and a spoken "One moment." filler instead of dead air; ASR
 keyword boosting stops "Jobvis" and "CV" being mis-heard; and the console orb
 is driven by the actual PCM level of Jobvis's voice (computed in the audio

@@ -1104,7 +1104,7 @@ def reset():
 
 
 def build_app() -> gr.Blocks:
-    """Build the three-step wizard app."""
+    """Build the four-step wizard app."""
     register_prompts()
 
     with gr.Blocks(title="Job Scout", theme=THEME, css=CSS) as demo:

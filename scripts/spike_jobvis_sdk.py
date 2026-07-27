@@ -1,4 +1,4 @@
-"""Throwaway spike: verify the installed ElevenLabs SDK matches what Jobvis expects.
+"""SDK canary: verify the installed ElevenLabs SDK matches what Jobvis expects.
 
 The Python client-tools API has churned before (elevenlabs-python issue #519),
 so this canary checks the *installed* SDK before session.py relies on it:

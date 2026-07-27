@@ -72,8 +72,6 @@ class VoiceBridge:
         self._snapshot = WizardSnapshot()
         self._run: VoiceRun | None = None
 
-    # ---- wizard-side hooks (called from Gradio handlers) --------------------
-
     def register_thread(self, thread_id: str) -> None:
         """A fresh wizard session: forget everything from the previous one."""
         with self._lock:
@@ -95,8 +93,6 @@ class VoiceBridge:
     def snapshot(self) -> WizardSnapshot:
         with self._lock:
             return self._snapshot
-
-    # ---- voice-side runs -----------------------------------------------------
 
     def run_in_progress(self) -> bool:
         with self._lock:
@@ -138,8 +134,6 @@ class VoiceBridge:
                 return None
             run.ui_pushed = True
             return run
-
-    # ---- internals -----------------------------------------------------------
 
     def _launch(self, kind: str, drive) -> str | None:
         with self._lock:

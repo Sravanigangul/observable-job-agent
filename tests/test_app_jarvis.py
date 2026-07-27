@@ -12,7 +12,7 @@ import job_scout.voice.bridge as bridge_module
 from job_scout.graph.schemas import CVContent, RankedJob, TailoringPack
 from job_scout.renderer import RenderResult
 from job_scout.voice.bridge import VoiceBridge
-from tests.conftest import make_job
+from tests.conftest import FakeVoiceSession, make_job
 
 
 @pytest.fixture
@@ -81,19 +81,9 @@ def test_jarvis_pack_panel_renders_once_per_pack(fresh_bridge, monkeypatch):
 
 
 def test_jarvis_tick_returns_all_outputs(fresh_bridge, tmp_store, monkeypatch):
-    class FakeSession:
-        def snapshot(self):
-            return "idle", [], ""
-
-        def hud(self):
-            return {"level": 0.0, "latency_ms": None}
-
-        def announce(self, text):
-            return True
-
     import job_scout.voice as voice_pkg
 
-    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeSession())
+    monkeypatch.setattr(voice_pkg, "get_voice_session", lambda: FakeVoiceSession())
     monkeypatch.setattr(bridge_module, "checkpoint_values", lambda thread_id: {})
     outputs = app_module.on_jarvis_tick()
     assert len(outputs) == 7

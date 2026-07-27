@@ -109,13 +109,9 @@ class JobvisSession:
         self._audio_interface = None
         self._latency_ms: int | None = None
 
-    # ---- observable state (polled by the UI Timer) ---------------------------
-
     def snapshot(self) -> tuple[str, list[tuple[str, str]], str]:
         with self._lock:
             return self._status, list(self._transcript), self._last_error
-
-    # ---- lifecycle -----------------------------------------------------------
 
     def start(self) -> tuple[bool, str]:
         """Start a conversation; returns ``(ok, user-facing message)``."""
@@ -175,8 +171,6 @@ class JobvisSession:
                 logger.warning("Jobvis end_session failed: %s", exc)
         self._set("idle")
 
-    # ---- proactivity (the JARVIS part) ---------------------------------------
-
     def announce(self, text: str) -> bool:
         """Make the agent SPEAK about a background event, unprompted.
 
@@ -216,8 +210,6 @@ class JobvisSession:
         meter = getattr(interface, "meter", None)
         level = meter.level(time.monotonic()) if meter is not None else 0.0
         return {"level": round(level, 3), "latency_ms": latency}
-
-    # ---- internals -----------------------------------------------------------
 
     def _wait(self, conversation) -> None:
         """Block on the SDK session thread and reflect how it ended."""

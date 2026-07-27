@@ -101,3 +101,23 @@ def plain_llm(content: str) -> MagicMock:
     message.content = content
     llm.invoke.return_value = message
     return llm
+
+
+class FakeVoiceSession:
+    """Stand-in for voice.session.JobvisSession in UI-handler tests (no SDK, no audio)."""
+
+    def __init__(self, status: str = "idle", lines: tuple = (), level: float = 0.0, latency_ms: int | None = None):
+        self._status = status
+        self._lines = list(lines)
+        self._hud = {"level": level, "latency_ms": latency_ms}
+        self.announced: list[str] = []
+
+    def snapshot(self):
+        return self._status, list(self._lines), ""
+
+    def hud(self):
+        return dict(self._hud)
+
+    def announce(self, text: str) -> bool:
+        self.announced.append(text)
+        return True

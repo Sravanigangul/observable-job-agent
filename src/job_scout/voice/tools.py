@@ -184,9 +184,6 @@ CLIENT_TOOL_HANDLERS = {
 }
 
 
-# ---- helpers ----------------------------------------------------------------
-
-
 def _clamp_count(raw: object) -> int:
     try:
         count = int(raw)  # type: ignore[arg-type]
