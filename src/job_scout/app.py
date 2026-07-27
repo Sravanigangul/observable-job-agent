@@ -1219,9 +1219,9 @@ def build_app() -> gr.Blocks:
                 '<p class="js-muted" style="font-size:0.86rem">The boxes come from your resume — a suggestion, '
                 "not a decision. Tick where you actually want to work; add anywhere we missed.</p>"
             )
-            loc_group = gr.CheckboxGroup(label="", choices=[], value=[], interactive=True)
+            loc_group = gr.CheckboxGroup(label="", show_label=False, choices=[], value=[], interactive=True)
             with gr.Row():
-                loc_new = gr.Textbox(label="", placeholder="Add another location…", scale=4)
+                loc_new = gr.Textbox(label="", show_label=False, placeholder="Add another location…", scale=4)
                 loc_add = gr.Button("Add", size="sm", scale=0)
             find_btn = gr.Button("Find jobs", variant="primary", size="lg")
             with gr.Accordion("Add your LinkedIn export (optional)", open=False):
