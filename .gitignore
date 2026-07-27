@@ -28,3 +28,6 @@ data/candidate/
 
 # Batch/snapshot run logs (artifacts, not committed)
 reports/*.log
+
+# Blog drafts (published on Substack, not in the repo)
+blog/
