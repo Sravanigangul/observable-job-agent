@@ -42,8 +42,16 @@ scratch** — the arithmetic worst case ran minutes.
 
 Measured checkpoints along the way, same fixture CV, live sources:
 **52.3s** (loops on, 4.1-mini, changes 1–2) → **24.0s** (parallel, no loops,
-4.1-mini) → **10.6s at $0.0015** (4o-mini). Changes 6–7 land after the last
-measurement — run them yourself and read the delta off the trace.
+4.1-mini) → **10.6s at $0.0015** (4o-mini).
+
+An honest footnote: our first run after changes 6–7 measured **10.5s — no
+visible gain**. The trace showed why: JSearch returned nothing that run, so
+the sequential source fallback (JSearch → Adzuna → Remotive) spent ~3s
+failing forward before Remotive answered, swallowing the nano-model saving —
+and 1–2s effects drown in single-run variance regardless. Two lessons for the
+price of one: small optimizations need several runs to measure, and the next
+real latency target is querying the job sources **concurrently** instead of
+as a fallback chain. That experiment is left for you.
 
 ## The observability gotcha worth the whole chapter
 
