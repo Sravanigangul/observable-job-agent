@@ -23,5 +23,5 @@ dist/
 # OS
 .DS_Store
 
-# Batch/snapshot run logs (artifacts, not committed)
-reports/*.log
+# Batch/snapshot output (runtime artifacts; the committed reference copy lives in docs/)
+reports/

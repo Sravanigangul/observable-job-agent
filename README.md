@@ -19,7 +19,7 @@
 </br>
 
 <p align="center">
-  <img src="docs/images/architecture.png" alt="Job Scout architecture" width="820">
+  <img src="docs/images/architecture_part1.png" alt="Job Scout Phase 1 architecture" width="820">
 </p>
 
 ## 📖 About This Project
@@ -50,15 +50,25 @@ Self-Improve**.
 - **Full Opik tracing on every run:** a span tree per node, an auto-drawn agent graph, per-run cost, the CV attached to the trace, and versioned prompts — all from one line of code
 - **A Gradio interface** with streamed progress and a run footer (cost, latency, deep link to the trace)
 - **Multi-source job search** (JSearch, Adzuna, Remotive, offline cache) that runs with **zero API keys**
-- **An honest baseline**: run it at scale, measure everything, document the weaknesses, and resist fixing them too early
+- **An honest baseline**: run it at scale, measure everything, document the weaknesses ([`docs/phase1_findings.md`](docs/phase1_findings.md)), and resist fixing them too early
 
 ### 📚 The Series
 
-| Part | Focus | Outcome | Tag |
-|------|-------|---------|-----|
-| **1 (this repo)** | **Build** | Working agent + Gradio UI + Opik tracing from run one + a documented baseline | `phase-1` |
-| 2 | Extend, then evaluate | Tailoring node (cover letter + CV suggestions) + datasets, LLM judges, and online evaluation rules | `phase-2` |
-| 3 | Self-improve | Test suites, prompt optimization, and trace-driven fixes with before/after numbers | `phase-3` |
+Every part ships as a **GitHub release**, so you can clone the exact code that
+matches the blog post you are reading.
+
+| Part | Focus | Blog post | Code release |
+|------|-------|-----------|--------------|
+| **1 (this release)** | **Build** | [Build your own Job Agent - Part 1](https://jamwithai.substack.com/p/build-your-own-job-agent-part-1) | [`part1.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part1.0) |
+| 2 | Extend, then evaluate | coming soon | coming soon |
+| 3 | Self-improve | coming soon | coming soon |
+
+📥 **Clone a specific part's release:**
+
+```bash
+git clone --branch part1.0 https://github.com/jamwithai/observable-job-agent
+# Replace part1.0 with the release tag of the part you are following
+```
 
 Read the deep dives on [Jam with AI](https://jamwithai.substack.com).
 
@@ -75,8 +85,8 @@ Read the deep dives on [Jam with AI](https://jamwithai.substack.com).
 ### ⚡ Get Started
 
 ```bash
-# 1. Clone
-git clone https://github.com/jamwithai/observable-job-agent
+# 1. Clone this part's release
+git clone --branch part1.0 https://github.com/jamwithai/observable-job-agent
 cd observable-job-agent
 
 # 2. Install
@@ -164,8 +174,8 @@ observable-job-agent/
 │   └── tools/          # jobs_api.py (JSearch/Adzuna/Remotive/cache), cv_reader.py
 ├── scripts/            # run_batch.py, snapshot_jobs.py, generate_fixture_cvs.py
 ├── data/               # cached_jobs.json, fixture_cvs/ (4 synthetic CVs)
-├── docs/               # architecture.md, opik_setup.md, extending_sources.md
-├── reports/            # baseline.json, phase1_findings.md
+├── docs/               # architecture.md, opik_setup.md, extending_sources.md,
+│                       # phase1_findings.md, baseline.json
 └── tests/              # 35 tests (LLM mocked, network mocked, Opik off)
 ```
 
