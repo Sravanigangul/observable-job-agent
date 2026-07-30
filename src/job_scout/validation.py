@@ -10,17 +10,23 @@ them is the reader's exercise):
 
 - Bullet ratio (``SCOUT_FAB_BULLET_RATIO``, default 0.65): a reworded bullet
   must reach this normalized ``difflib.SequenceMatcher`` ratio against its
-  referenced corpus item. Aggressive-but-honest rewrites can land below it
-  (false positive); a fabricated detail inside an otherwise-copied bullet can
-  pass (false negative).
+  referenced corpus item. Numbers and units are canonicalized first
+  (10M ~ 10 million, "/day" ~ "per day" ~ "daily"), so unit spelling alone
+  cannot sink an honest rewrite; a fabricated detail inside an
+  otherwise-copied bullet can still pass (the remaining false negative).
 - Letter ratio (``SCOUT_FAB_LETTER_RATIO``, default 0.55): cover letters
   legitimately paraphrase, so the sentence-level threshold is softer, and only
   "factual-looking" sentences (a digit, a year, or a multi-word capitalized
-  name) are checked at all. Motivation sentences are unverifiable and skipped.
+  name) are checked at all. A sentence that misses on every single reference
+  gets one more chance against two-reference combinations, because true
+  sentences are often assembled from two corpus items. Motivation sentences
+  are unverifiable and skipped.
 - Skill ratio (``SCOUT_FAB_SKILL_RATIO``, default 0.85) applies when the CV
-  yielded a skills section; when the heuristic segmentation found NONE, each
-  skill is grounded in the full corpus text instead — flagging everything at
-  0.00 against an empty vocabulary is noise, not signal.
+  yielded a skills section; a skill whose words are a subset of a corpus
+  skill's words also passes ("AWS" is grounded by "basic AWS" — claiming less
+  is honest). When segmentation found NO skills section, each skill is
+  grounded in the full corpus text instead — flagging everything at 0.00
+  against an empty vocabulary is noise, not signal.
 
 All three are env knobs, and every ``FabricationReport`` records the values it
 ran with — the report reaches state, trace metadata, and the UI, so a tuning
@@ -43,10 +49,27 @@ _MIN_SKILL_TOKEN_CHARS = 3
 _PUNCT = re.compile(r"[^\w\s]")
 _WS = re.compile(r"\s+")
 
+# Deterministic canonicalization (Phase 3, weakness #8): "10M requests/day"
+# and "10 million requests per day" should compare as the same claim. A tiny
+# lookup table, not NLP — both sides of every comparison go through it, so it
+# can only merge spellings, never invent meaning.
+_NUM_SUFFIXES = {"k": "thousand", "m": "million", "bn": "billion", "b": "billion"}
+_NUM_SUFFIX_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(bn|k|m|b)\b")
+_PER_RE = re.compile(r"\bper\s+(\w+)\b")
+_FREQ_WORDS = {"daily": "day", "weekly": "week", "monthly": "month", "yearly": "year", "annually": "year", "hourly": "hour"}
+
 
 def _normalize(text: str) -> str:
-    """Lowercase, strip punctuation, collapse whitespace."""
-    return _WS.sub(" ", _PUNCT.sub(" ", text.lower())).strip()
+    """Lowercase, strip punctuation, collapse whitespace, canonicalize units.
+
+    Canonicalization: numeric suffixes expand (10m -> 10 million), "per X"
+    collapses to "X" (punctuation already turned "/day" into "day"), and
+    frequency adverbs map to their nouns (daily -> day).
+    """
+    text = _WS.sub(" ", _PUNCT.sub(" ", text.lower()))
+    text = _NUM_SUFFIX_RE.sub(lambda m: f"{m.group(1)} {_NUM_SUFFIXES[m.group(2)]}", text)
+    text = _PER_RE.sub(r"\1", text)
+    return " ".join(_FREQ_WORDS.get(word, word) for word in text.split()).strip()
 
 
 def _ratio(a: str, b: str) -> float:
@@ -57,6 +80,20 @@ def _ratio(a: str, b: str) -> float:
 def _best_ratio(text: str, references: list[str]) -> float:
     """Best similarity of ``text`` against any reference string."""
     return max((_ratio(text, ref) for ref in references), default=0.0)
+
+
+def _best_pair_ratio(text: str, references: list[str]) -> float:
+    """Best similarity against a two-reference combination (Phase 3, #9).
+
+    A true sentence assembled from two corpus items matches neither alone.
+    Concatenating the top three single-match references pairwise (both orders)
+    keeps this deterministic and cheap while catching the compositional case.
+    """
+    top = sorted(references, key=lambda ref: _ratio(text, ref), reverse=True)[:3]
+    return max(
+        (_ratio(text, f"{a} {b}") for a in top for b in top if a is not b),
+        default=0.0,
+    )
 
 
 def _looks_factual(sentence: str) -> bool:
@@ -135,7 +172,12 @@ def validate_pack(
         claims_checked += 1
         if corpus_skills:
             best = _best_ratio(skill, corpus_skills)
-            if best < skill_ratio:
+            # Containment (Phase 3, #8): claiming LESS than the corpus states
+            # is honest — "AWS" is grounded by "basic AWS". The reverse (adding
+            # qualifiers the corpus never made) still has to pass the ratio.
+            claimed = set(_normalize(skill).split())
+            contained = bool(claimed) and any(claimed <= set(_normalize(cs).split()) for cs in corpus_skills)
+            if best < skill_ratio and not contained:
                 flagged.append(
                     FlaggedClaim(
                         where=f"skill:{skill}",
@@ -174,6 +216,8 @@ def validate_pack(
             continue
         claims_checked += 1
         best = _best_ratio(sentence, references)
+        if best < letter_ratio:
+            best = max(best, _best_pair_ratio(sentence, references))
         if best < letter_ratio:
             flagged.append(
                 FlaggedClaim(

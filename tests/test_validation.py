@@ -149,3 +149,69 @@ def test_greeting_and_signoff_are_never_checked():
     letter = "Dear Initech Systems hiring team of 500 engineers!\nSincerely, Jane Doe, 42nd applicant"
     report = validate_pack(_pack([], letter=letter), _corpus())
     assert report.flags == 0
+
+
+def test_unit_spelling_rewrite_is_not_flagged():
+    """Phase 3 #8: '10M requests/day' and '10 million requests per day' are one claim."""
+    corpus = CandidateCorpus(
+        items=[
+            CorpusItem(
+                id="cv-bullet-001",
+                text="Designed a real-time recommendation service handling 10M requests/day.",
+                kind="bullet",
+                source="cv",
+                section="Experience",
+            )
+        ]
+    )
+    pack = _pack(
+        [
+            TailoredBullet(
+                text="Designed a real-time recommendation service handling 10 million requests daily", corpus_ref="cv-bullet-001"
+            )
+        ],
+        skills=[],
+    )
+    report = validate_pack(pack, corpus)
+    assert report.flags == 0
+
+
+def test_skill_subset_of_corpus_skill_passes():
+    """Phase 3 #8: claiming less than the corpus states is honest ('AWS' vs 'basic AWS')."""
+    corpus = CandidateCorpus(items=[CorpusItem(id="cv-skill-001", text="basic AWS", kind="skill", source="cv", section="Skills")])
+    ok = _pack([], skills=["AWS"])
+    assert validate_pack(ok, corpus).flags == 0
+
+    inflated = _pack([], skills=["advanced AWS solution architecture"])
+    report = validate_pack(inflated, corpus)
+    assert report.flags == 1 and report.flagged[0].where == "skill:advanced AWS solution architecture"
+
+
+def test_compositional_letter_claim_passes_via_pair():
+    """Phase 3 #9: a true sentence assembled from two corpus items is not a fabrication."""
+    corpus = CandidateCorpus(
+        items=[
+            CorpusItem(
+                id="cv-summary-001",
+                text="1.5 years of experience as a Data Analyst at BrightRetail Inc.",
+                kind="summary",
+                source="cv",
+                section="Summary",
+            ),
+            CorpusItem(
+                id="cv-bullet-001",
+                text="Built forecasting models for retail demand planning.",
+                kind="bullet",
+                source="cv",
+                section="Experience",
+            ),
+        ]
+    )
+    letter = (
+        "Dear team,\n"
+        "With 1.5 years of experience as a Data Analyst at BrightRetail Inc, I built forecasting models for retail demand.\n"
+        "Kind regards, Jane"
+    )
+    pack = _pack([], skills=[], letter=letter)
+    report = validate_pack(pack, corpus)
+    assert report.flags == 0

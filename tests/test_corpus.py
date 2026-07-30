@@ -103,6 +103,49 @@ def test_linkedin_zip_without_known_csvs_yields_no_items(tmp_path):
     assert all(item.source == "cv" for item in corpus.items)
 
 
+def test_wrapped_lines_are_joined():
+    cv = """\
+Summary
+Machine learning engineer with 7 years of experience who
+owns MLOps, and is open to remote or Berlin-based roles.
+
+Skills
+Python, SQL,
+dbt.
+"""
+    corpus = build_corpus(cv)
+    summaries = [item.text for item in corpus.items if item.kind == "summary"]
+    assert summaries == [
+        "Machine learning engineer with 7 years of experience who owns MLOps, and is open to remote or Berlin-based roles."
+    ]
+    assert corpus.skills() == ["Python", "SQL", "dbt"]
+
+
+def test_blank_lines_are_join_barriers():
+    cv = "Summary\nFirst thought with no full stop\n\nA second thought standing entirely alone"
+    corpus = build_corpus(cv)
+    texts = [item.text for item in corpus.items]
+    assert "First thought with no full stop" in texts
+    assert "A second thought standing entirely alone" in texts
+
+
+def test_flexible_skill_headings():
+    cv = "Technical Skills\nPython, Kubernetes.\n\nTech Stack\nAirflow.\n"
+    corpus = build_corpus(cv)
+    assert corpus.skills() == ["Python", "Kubernetes", "Airflow"]
+
+
+def test_pipe_rows_keep_content_but_drop_contacts():
+    cv = """\
+Experience
+2019 | Data Engineer | Acme GmbH
+Berlin | +49 170 1234567 | linkedin.com/in/jane
+"""
+    corpus = build_corpus(cv)
+    bullets = [item.text for item in corpus.items if item.kind == "bullet"]
+    assert bullets == ["2019, Data Engineer, Acme GmbH"]
+
+
 def test_empty_cv_yields_empty_corpus():
     assert build_corpus("").items == []
 

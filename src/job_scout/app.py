@@ -610,8 +610,7 @@ def _voice_status_html(status: str, message: str = "", hud: dict | None = None) 
     latency_ms = (hud or {}).get("latency_ms")
     latency = f'<span class="jv-lat">· {int(latency_ms)} ms</span>' if latency_ms and status == "active" else ""
     return (
-        f'<div class="jv-status {cls}"><span class="jv-dot" style="--jv-level:{level:.3f}"></span>'
-        f"{escape(label)}{latency}</div>"
+        f'<div class="jv-status {cls}"><span class="jv-dot" style="--jv-level:{level:.3f}"></span>{escape(label)}{latency}</div>'
     )
 
 
@@ -625,9 +624,7 @@ def _voice_context(text: str) -> None:
 def _run_announcement(run) -> str:
     """The 'System note' that makes Jobvis speak, unprompted, about a finished run."""
     if run.failed:
-        return (
-            f"System note: the {run.kind} failed ({run.error or 'unknown error'}). " "Apologize briefly and suggest trying again."
-        )
+        return f"System note: the {run.kind} failed ({run.error or 'unknown error'}). Apologize briefly and suggest trying again."
     if run.kind == "search" and run.search_result is not None:
         ranked = run.search_result.ranked_jobs
         if not ranked:
@@ -669,7 +666,7 @@ def _transcript_html(lines: list[tuple[str, str]]) -> str:
         elif role == "system":
             rows.append(f'<div class="jv-system">{escape(text)}</div>')
         else:
-            rows.append(f'<div><b>{"You" if role == "you" else "Jobvis"}:</b> {escape(text)}</div>')
+            rows.append(f"<div><b>{'You' if role == 'you' else 'Jobvis'}:</b> {escape(text)}</div>")
     return f'<div class="jv-transcript">{"".join(rows)}</div>'
 
 
