@@ -12,7 +12,7 @@ dependencies = [
     "langchain>=0.3",
     "langchain-openai>=0.3",
     "langchain-core>=0.3",
-    "opik>=2.1",
+    "opik>=2.2",
     "gradio>=5",
     "pypdf>=5",
     "pydantic>=2.11",
@@ -40,6 +40,9 @@ groq = ["langchain-groq>=0.2"]
 # Jobvis, the voice concierge (ElevenLabs Agents + system mic). Install with:
 #   brew install portaudio && uv sync --extra voice
 voice = ["elevenlabs[pyaudio]>=2.39,<3"]
+optimize = [
+    "opik-optimizer>=3.1",
+]
 
 [build-system]
 requires = ["hatchling"]
