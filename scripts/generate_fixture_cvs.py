@@ -231,6 +231,10 @@ def german_pm_de() -> None:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Regenerate the synthetic fixture CVs under data/fixture_cvs/.")
+    parser.parse_args()
     junior_ds_us()
     senior_mle_eu()
     career_changer_in()

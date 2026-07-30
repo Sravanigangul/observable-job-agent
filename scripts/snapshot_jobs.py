@@ -78,6 +78,12 @@ def collect() -> list[JobPosting]:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Rebuild data/cached_jobs.json from live job sources (OVERWRITES the committed cache)."
+    )
+    parser.parse_args()
     jobs = collect()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps([j.model_dump() for j in jobs], indent=2, ensure_ascii=False))

@@ -621,7 +621,10 @@ def on_upload(file_path: str | None, thread_id: str):
     try:
         profile = extract_profile(cv_text, thread_id=thread_id, tags=["phase-2", "ui", "extract"])
     except Exception as exc:  # noqa: BLE001 - show a friendly error and return to start
-        yield (*stay, gr.update(), "", _status(f"Couldn't read a profile: {exc}", error=True), None, no, no)
+        msg = f"Couldn't read a profile: {exc}"
+        if "api_key" in str(exc).lower() or "credentials" in str(exc).lower():
+            msg += " Add an LLM key to .env (OPENAI_API_KEY, or a free SCOUT_MODEL via groq:/ollama:)."
+        yield (*stay, gr.update(), "", _status(msg, error=True), None, no, no)
         return
     choices, selected = _preference_selection(profile, None)
     candidate_store.save_candidate(profile, cv_text, _selection_to_prefs(selected))
@@ -737,7 +740,7 @@ def build_app() -> gr.Blocks:
     """Build the four-step wizard app."""
     register_prompts()
 
-    with gr.Blocks(title="Job Scout", theme=THEME, css=CSS) as demo:
+    with gr.Blocks(title="Job Scout") as demo:
         thread_id = gr.State(lambda: str(uuid4()))
         cv_text_state = gr.State("")
         profile_state = gr.State(None)
@@ -877,8 +880,8 @@ def build_app() -> gr.Blocks:
 
 
 def main() -> None:
-    """Serve the wizard on :7860."""
-    build_app().launch(server_name="127.0.0.1", server_port=7860, theme=THEME, css=CSS)
+    """Serve the wizard on :7860, or the next free port (GRADIO_SERVER_PORT overrides)."""
+    build_app().launch(server_name="127.0.0.1", theme=THEME, css=CSS)
 
 
 if __name__ == "__main__":

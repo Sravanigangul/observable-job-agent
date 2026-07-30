@@ -1,6 +1,6 @@
 # Job Scout — Architecture
 
-![Job Scout architecture](images/architecture.png)
+![Job Scout architecture](images/architecture_part2.png)
 
 Grounded in the current code (`src/job_scout/…`). Renders anywhere Mermaid is
 supported (GitHub, most blog engines). Legend: **solid arrows** = data flow,
@@ -117,6 +117,3 @@ flowchart TB
    the auto-drawn agent graph (per-run tracer via `trace_graph`), per-run cost,
    the versioned prompt library (4 prompts), and the CV attached to the trace.
    `config.py` supplies keys and settings.
-
-> Note: `images/architecture.png` still shows the Phase 1 topology — regenerate
-> it from the Mermaid source above when producing Phase 2 blog assets.
