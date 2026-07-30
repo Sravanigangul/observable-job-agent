@@ -16,7 +16,18 @@ os.environ["OPIK_API_KEY"] = ""
 os.environ["ADZUNA_APP_ID"] = ""
 os.environ["ADZUNA_APP_KEY"] = ""
 os.environ["JSEARCH_API_KEY"] = ""
+os.environ["TAVILY_API_KEY"] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+# Pin tunable knobs to their defaults so a developer's .env tuning
+# (e.g. SCOUT_MAX_REFORMULATIONS=0 or looser validator ratios) can't
+# change test behavior.
+os.environ["SCOUT_MAX_JOBS"] = "10"
+os.environ["SCOUT_MAX_REFORMULATIONS"] = "2"
+os.environ["SCOUT_FETCH_MODEL"] = ""
+os.environ["SCOUT_RANK_BATCH"] = "4"
+os.environ["SCOUT_FAB_BULLET_RATIO"] = "0.65"
+os.environ["SCOUT_FAB_SKILL_RATIO"] = "0.85"
+os.environ["SCOUT_FAB_LETTER_RATIO"] = "0.55"
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402
@@ -29,6 +40,19 @@ def _clear_settings_cache():
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_candidate_store(tmp_path, monkeypatch):
+    """No test may touch the REAL persisted candidate (data/candidate/).
+
+    A bare reset() call in a handler test once wiped a user's stored CV —
+    every test now gets a throwaway store; per-test fixtures may re-patch.
+    """
+    import job_scout.candidate_store as candidate_store
+
+    monkeypatch.setattr(candidate_store, "_STORE_DIR", tmp_path / "candidate")
+    monkeypatch.setattr(candidate_store, "_STORE_PATH", tmp_path / "candidate" / "profile.json")
 
 
 @pytest.fixture

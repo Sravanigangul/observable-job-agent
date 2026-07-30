@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from job_scout.config import get_settings
-from job_scout.graph import build_graph
-from job_scout.graph.schemas import Profile, RankedJob
+from job_scout.graph import get_compiled_graph
+from job_scout.graph.schemas import FabricationReport, Profile, RankedJob, TailoringPack
 from job_scout.profile import extract_profile
 from job_scout.tracing import attach_cv, get_tracer, opik_url, trace_graph
 
@@ -29,6 +29,8 @@ _NODE_STATUS = {
     "fetch_jobs": "searching jobs…",
     "rank_jobs": "ranking jobs…",
     "reformulate_query": "broadening the search…",
+    "tailor": "drafting the application…",
+    "validate_tailoring": "checking every claim against your CV…",
 }
 
 
@@ -78,11 +80,11 @@ def stream_search(
     settings = get_settings()
     tracer = get_tracer(thread_id, tags)
     usage_cb = UsageMetadataCallbackHandler()
-    # track_langgraph already registers the tracer on the graph; passing it in
-    # callbacks too would double-fire its run-ID index.
-    callbacks = [usage_cb]
+    # The tracer rides in config callbacks (not injected into the graph) so the
+    # shared compiled graph stays run-agnostic; see tracing.trace_graph.
+    callbacks = [usage_cb] + ([tracer] if tracer else [])
 
-    graph = trace_graph(build_graph(), tracer)
+    graph = trace_graph(get_compiled_graph(), tracer)
     inputs = {"profile": profile, "cv_text": cv_text, "selected_job_id": selected_job_id}
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
 
@@ -109,6 +111,71 @@ def stream_search(
         result.cost_usd = _estimate_cost(usage_cb.usage_metadata, settings.scout_model)
         if cv_path:
             attach_cv(tracer, cv_path)
+        if tracer:
+            tracer.flush()
+
+    yield ("result", result)
+
+
+@dataclass
+class TailorResult:
+    """The outcome of one tailoring run (second invocation on a search thread)."""
+
+    pack: TailoringPack | None = None
+    fabrication_flags: int = 0
+    fabrication_report: FabricationReport | None = None
+    research_used: bool = False
+    errors: list[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+    latency_s: float = 0.0
+    opik_url: str = ""
+    failed: bool = False
+    error_message: str = ""
+
+
+def stream_tailor(
+    *,
+    thread_id: str,
+    selected_job_id: str,
+    tags: list[str],
+    linkedin_zip_path: str | None = None,
+) -> Iterator[tuple[str, object]]:
+    """Run the tailoring pipeline on an EXISTING search thread.
+
+    The inputs are exactly ``selected_job_id`` (+ the optional LinkedIn export
+    path): profile, ranked jobs and CV text all come from the thread's
+    checkpoint, so this invocation runs only ``tailor`` and
+    ``validate_tailoring`` — no extract/fetch/rank work repeats. Yields
+    ``("status", msg)`` per node and finally ``("result", TailorResult)``.
+    """
+    settings = get_settings()
+    tracer = get_tracer(thread_id, tags)
+    usage_cb = UsageMetadataCallbackHandler()
+    callbacks = [usage_cb] + ([tracer] if tracer else [])
+
+    graph = trace_graph(get_compiled_graph(), tracer)
+    inputs = {"selected_job_id": selected_job_id, "linkedin_zip_path": linkedin_zip_path}
+    config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
+
+    result = TailorResult(opik_url=opik_url())
+    start = time.monotonic()
+    try:
+        for chunk in graph.stream(inputs, config=config, stream_mode="updates"):
+            for node_name, update in chunk.items():
+                yield ("status", _status_line(node_name, update))
+
+        final = graph.get_state(config).values
+        result.pack = final.get("tailoring")
+        result.fabrication_flags = final.get("fabrication_flags", 0)
+        result.fabrication_report = final.get("fabrication_report")
+        result.research_used = bool(final.get("research_notes"))
+        result.errors = final.get("errors", [])
+    except Exception as exc:  # noqa: BLE001 - report as a failed run, keep the trace
+        result.failed = True
+        result.error_message = f"{type(exc).__name__}: {exc}"
+    finally:
+        result.latency_s = round(time.monotonic() - start, 2)
+        result.cost_usd = _estimate_cost(usage_cb.usage_metadata, settings.scout_tailor_model)
         if tracer:
             tracer.flush()
 

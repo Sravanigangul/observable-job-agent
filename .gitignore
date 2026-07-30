@@ -20,8 +20,14 @@ dist/
 .ruff_cache/
 .ipynb_checkpoints/
 
+# The locally persisted candidate (CV text + profile) — personal data, never committed
+data/candidate/
+
 # OS
 .DS_Store
 
-# Batch/snapshot output (runtime artifacts; the committed reference copy lives in docs/)
+# Batch/snapshot output (runtime artifacts; the committed reference copies live in docs/)
 reports/
+
+# Blog drafts (published on Substack, not in the repo)
+blog/

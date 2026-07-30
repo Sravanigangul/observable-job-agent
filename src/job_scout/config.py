@@ -8,16 +8,22 @@ name is documented in ``.env.example``.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The repo-root .env, resolved from this file so notebooks and scripts running
+# from subdirectories (e.g. notebooks/) still find it. A CWD-local .env, when
+# present, is read second and wins.
+_REPO_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
     """Runtime configuration, read once from the environment or ``.env``."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_REPO_ENV, ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -37,9 +43,26 @@ class Settings(BaseSettings):
     adzuna_app_id: SecretStr = Field(default=SecretStr(""), alias="ADZUNA_APP_ID")
     adzuna_app_key: SecretStr = Field(default=SecretStr(""), alias="ADZUNA_APP_KEY")
 
-    max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
+    tavily_api_key: SecretStr = Field(default=SecretStr(""), alias="TAVILY_API_KEY")
 
-    @field_validator("opik_workspace", "opik_project_name", "scout_model", "scout_tailor_model", mode="before")
+    max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
+    scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")
+    scout_max_reformulations: int = Field(default=2, alias="SCOUT_MAX_REFORMULATIONS")
+    scout_fetch_model: str = Field(default="", alias="SCOUT_FETCH_MODEL")
+    scout_rank_batch: int = Field(default=4, alias="SCOUT_RANK_BATCH")
+
+    fab_bullet_ratio: float = Field(default=0.65, alias="SCOUT_FAB_BULLET_RATIO")
+    fab_skill_ratio: float = Field(default=0.85, alias="SCOUT_FAB_SKILL_RATIO")
+    fab_letter_ratio: float = Field(default=0.55, alias="SCOUT_FAB_LETTER_RATIO")
+
+    @field_validator(
+        "opik_workspace",
+        "opik_project_name",
+        "scout_model",
+        "scout_tailor_model",
+        "scout_fetch_model",
+        mode="before",
+    )
     @classmethod
     def _drop_inline_comment(cls, value: object) -> object:
         """Treat a value that is only a ``# comment`` as empty.
@@ -62,6 +85,11 @@ class Settings(BaseSettings):
     def has_adzuna(self) -> bool:
         """Whether both Adzuna credentials are configured."""
         return bool(self.adzuna_app_id.get_secret_value() and self.adzuna_app_key.get_secret_value())
+
+    @property
+    def has_tavily(self) -> bool:
+        """Whether a Tavily API key is configured (optional company research)."""
+        return bool(self.tavily_api_key.get_secret_value())
 
     @property
     def has_opik(self) -> bool:
