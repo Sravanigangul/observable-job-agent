@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     scout_max_reformulations: int = Field(default=2, alias="SCOUT_MAX_REFORMULATIONS")
     scout_fetch_model: str = Field(default="", alias="SCOUT_FETCH_MODEL")
     scout_rank_batch: int = Field(default=4, alias="SCOUT_RANK_BATCH")
+    scout_concurrent_sources: bool = Field(default=True, alias="SCOUT_CONCURRENT_SOURCES")
 
     fab_bullet_ratio: float = Field(default=0.65, alias="SCOUT_FAB_BULLET_RATIO")
     fab_skill_ratio: float = Field(default=0.85, alias="SCOUT_FAB_SKILL_RATIO")

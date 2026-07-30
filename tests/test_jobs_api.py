@@ -143,7 +143,8 @@ def test_jsearch_primary_when_available():
         cache=_fake_source("c", []),
     )
     assert used == ["jsearch"]
-    adzuna.fetch.assert_not_called()  # JSearch returned enough; Adzuna skipped
+    # Since Phase 3 sources fire concurrently; "skipped" means not CONSUMED.
+    assert all(job.source != "adzuna" for job in jobs)
 
 
 def test_cache_source_keyword_match(tmp_path):
@@ -179,3 +180,50 @@ def test_cache_source_keyword_match(tmp_path):
     jobs = src.fetch("machine learning python", None, None, False, 10)
     assert jobs[0].title == "Machine Learning Engineer"
     assert jobs[0].source == "cache"
+
+
+def test_concurrent_fanout_preserves_cascade_priority(monkeypatch):
+    """Phase 3: sources are queried concurrently, consumed in cascade order."""
+
+    class Fake:
+        available = True
+
+        def __init__(self, name, found):
+            self.name, self.found, self.calls = name, found, 0
+
+        def fetch(self, *a, **k):
+            self.calls += 1
+            return self.found
+
+    rich = [make_job(f"jsearch-{i}", f"Job {i}", f"Co {i}") for i in range(6)]
+    js, ad, rm = (
+        Fake("jsearch", rich),
+        Fake("adzuna", [make_job("a-1", "A", "ACo")]),
+        Fake("remotive", [make_job("r-1", "R", "RCo")]),
+    )
+    jobs, used = run_search("q", jsearch=js, adzuna=ad, remotive=rm, cache=Fake("cache", []))
+    # jsearch was rich: adzuna/remotive results are FETCHED (fired concurrently) but not consumed
+    assert used == ["jsearch"]
+    assert [j.job_id for j in jobs[:6]] == [f"jsearch-{i}" for i in range(6)]
+
+
+def test_sequential_mode_skips_lower_sources_entirely(monkeypatch):
+    monkeypatch.setenv("SCOUT_CONCURRENT_SOURCES", "false")
+    from job_scout.config import get_settings
+
+    get_settings.cache_clear()
+
+    class Fake:
+        available = True
+
+        def __init__(self, found):
+            self.found, self.calls = found, 0
+
+        def fetch(self, *a, **k):
+            self.calls += 1
+            return self.found
+
+    rich = [make_job(f"jsearch-{i}", f"Job {i}", f"Co {i}") for i in range(6)]
+    js, ad, rm = Fake(rich), Fake([make_job("a-1", "A", "ACo")]), Fake([make_job("r-1", "R", "RCo")])
+    jobs, used = run_search("q", jsearch=js, adzuna=ad, remotive=rm, cache=Fake([]))
+    assert used == ["jsearch"] and ad.calls == 0 and rm.calls == 0

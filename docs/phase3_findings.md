@@ -29,12 +29,12 @@ Raw run snapshots: `docs/phase3/b0_tailor_batch.json`, `b1_...`, `b2_...`.
 
 | Metric | B0 (baseline) | B1 (segmenter+validator v2) | B2 (+optimized prompt) |
 |--------|---------------|------------------------------|------------------------|
-| Fabrication rate | 0.2768 (62/224) | 0.2555 (58/227) | pending |
-| Runs flagged | 14 of 14 | 14 of 14 | pending |
-| Flags: cv_bullet / letter / skill | 29 / 30 / 3 | 28 / 27 / 3 | pending |
-| Flags in 0.55-0.65 near-miss band | 17 | 18 | pending |
-| Mean cover letter words | 195.4 | 197.2 | pending |
-| Batch cost (USD) | 0.049 | 0.049 | pending |
+| Fabrication rate | 0.2768 (62/224) | 0.2555 (58/227) | **0.1288 (30/233)** |
+| Runs flagged | 14 of 14 | 14 of 14 | **13 of 14** (first-ever clean run) |
+| Flags: cv_bullet / letter / skill | 29 / 30 / 3 | 28 / 27 / 3 | **1** / 29 / **0** |
+| Flags in 0.55-0.65 near-miss band | 17 | 18 | 1 |
+| Mean cover letter words | 195.4 | 197.2 | 203.6 |
+| Batch cost (USD) | 0.049 | 0.049 | 0.049 |
 
 The live batches are noisy (fresh searches, fresh generations), so the
 validator's isolated effect was also measured the deterministic way: the 15
@@ -58,10 +58,10 @@ Filled in as the work lands; every Phase 2 weakness gets a verdict here.
 
 | # | Weakness (Phase 2) | Status |
 |---|--------------------|--------|
-| 7 | Tailor prompt drifts, every run flagged | in progress (optimizer) |
-| 8 | Thresholds flag honest rewrites (near-miss band) | in progress (validator v2) |
+| 7 | Tailor prompt drifts, every run flagged | **FIXED by the optimizer**: HRPO against the deterministic grounding metric, 0.772 -> 0.868 on the optimization set (92 LLM calls, `docs/phase3/optimizer_result.json`); live batch bullet flags 28 -> 1, rate 0.2555 -> 0.1288, one run fully clean. Residual: cover-letter claims (29 flags) are now ~all of the flag load |
+| 8 | Thresholds flag honest rewrites (near-miss band) | **FIXED (validator v2)**: unit canonicalization + skill containment; paired revalidation of identical packs 0.2664 -> 0.2500; near-miss band 17 -> 1 by B2 |
 | 9 | Compositional truths flagged / embedded lies pass | partially fixed (pair references); embedded-lie false negative remains, documented |
 | 10 | Judgment depends on the judge (0.44 vs 0.84) | calibration pending hand labels |
 | 11 | Online rules cannot read attachments | **expired upstream**: Opik ships attachment-reading LLM-judge rules since 2026-06-23 (agentic tool loop, up to 8 attachments). The cv_text fallback can retire; docs updated in Part 3 packaging |
-| 12 | Naive segmentation pollutes the corpus | in progress (segmenter v2) |
+| 12 | Naive segmentation pollutes the corpus | **FIXED (segmenter v2)**: wrapped-line joining, flexible skill headings, pipe rows kept as content. Still a heuristic by design |
 | 1-6 | Phase 1 carryovers (Adzuna underuse, ignored locations, reformulation churn, cost/latency, score compression, matched_skills grounding) | latency addressed in `docs/optimizing_latency.md` + concurrent source fan-out (this phase); rest re-measured at wrap |
