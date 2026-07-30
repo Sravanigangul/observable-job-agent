@@ -26,8 +26,8 @@ data/candidate/
 # OS
 .DS_Store
 
-# Batch/snapshot run logs (artifacts, not committed)
-reports/*.log
+# Batch/snapshot output (runtime artifacts; the committed reference copies live in docs/)
+reports/
 
 # Blog drafts (published on Substack, not in the repo)
 blog/

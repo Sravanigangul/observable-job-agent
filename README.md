@@ -19,7 +19,7 @@
 </br>
 
 <p align="center">
-  <img src="docs/images/architecture.png" alt="Job Scout architecture" width="820">
+  <img src="docs/images/architecture_part2.png" alt="Job Scout Phase 2 architecture" width="820">
 </p>
 
 ## 📖 About This Project
@@ -56,11 +56,21 @@ Self-Improve**.
 
 ### 📚 The Series
 
-| Part | Focus | Outcome | Tag |
-|------|-------|---------|-----|
-| **1** | **Build** | Working agent + Gradio UI + Opik tracing from run one + a documented baseline | `phase-1` |
-| **2 (this repo)** | **Extend, then evaluate** | Corpus-grounded tailoring (cover letter + LaTeX CV) with a deterministic fabrication validator + the full eval stack: hand-labeled and trace-exported datasets, LLM judges, trajectory metrics, online rules, judge-vs-human calibration | `phase-2` |
-| 3 | Self-improve | Test suites, prompt optimization, and trace-driven fixes with before/after numbers | `phase-3` |
+Every part ships as a **GitHub release**, so you can clone the exact code that
+matches the blog post you are reading.
+
+| Part | Focus | Blog post | Code release |
+|------|-------|-----------|--------------|
+| **1** | **Build** | [Build your own Job Agent - Part 1](https://jamwithai.substack.com/p/build-your-own-job-agent-part-1) | [`part1.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part1.0) |
+| **2 (this repo)** | **Extend, then evaluate** | coming soon | coming soon |
+| 3 | Self-improve | coming soon | coming soon |
+
+📥 **Clone a specific part's release:**
+
+```bash
+git clone --branch part1.0 https://github.com/jamwithai/observable-job-agent
+# Replace part1.0 with the release tag of the part you are following
+```
 
 Read the deep dives on [Jam with AI](https://jamwithai.substack.com).
 
@@ -218,8 +228,8 @@ observable-job-agent/
 ├── scripts/            # run_batch.py, run_tailor_batch.py, build_*_dataset.py, run_evals.py,
 │                       # setup_annotation_queue.py, snapshot_jobs.py, generate_fixture_*.py
 ├── data/               # cached_jobs.json, fixture_cvs/, fixture_linkedin/, labels/ (hand labels)
-├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md, optimizing_latency.md
-├── reports/            # baseline.json, tailor_batch.json, phase*_findings.md, phase2_eval_report.md
+├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md,
+│                       # optimizing_latency.md, baseline.json, tailor_batch.json, phase*_findings.md
 └── tests/              # 100+ tests (LLM mocked, network mocked, Opik off)
 ```
 

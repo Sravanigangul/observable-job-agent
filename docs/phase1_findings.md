@@ -11,7 +11,8 @@ to make the weaknesses observable.
 uv run python scripts/run_batch.py --yes --limit 20
 ```
 
-Writes `reports/baseline.json`. Numbers below are from that file.
+Writes `reports/baseline.json` at run time; the committed reference copy is
+`docs/baseline.json`, which the numbers below come from.
 
 ## Baseline numbers
 

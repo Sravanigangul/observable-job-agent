@@ -6,7 +6,7 @@ variations plus deliberately hard cases (~50 runs), tags every trace
 
 This produces Post 1's payoff numbers and Phase 2's raw material. It does NOT
 fix anything it surfaces — failures and weaknesses are documented in
-reports/phase1_findings.md, then fixed only in Phase 3.
+docs/phase1_findings.md, then fixed only in Phase 3.
 
 Usage:
     uv run python scripts/run_batch.py            # prints projected cost, then stops
