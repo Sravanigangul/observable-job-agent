@@ -86,7 +86,7 @@ CV **PDF** to every trace (`attach_cv`) intending a PDF-attachment-aware judge,
 but online rules can currently only map **trace input/output variables** — they
 cannot read trace attachments. Rule 3 above is the fallback: it judges against
 the extracted `cv_text` instead of the original PDF, which means PDF-extraction
-errors are invisible to it. Documented in `reports/phase2_findings.md`; revisit
+errors are invisible to it. Documented in `docs/phase2_findings.md`; revisit
 as Opik ships (the docs already mention vision-capable models for images).
 
 Rules score only traces that arrive **after** the rule is created; use the
@@ -115,4 +115,4 @@ feedback scores, filterable in the project view.
 The related judge-vs-human calibration lives in
 `data/labels/ranking_calibration.csv` (scaffolded via
 `setup_annotation_queue.py --scaffold-calibration`, hand-labeled, scored by
-`run_evals.py --calibration`); results go in `reports/phase2_eval_report.md`.
+`run_evals.py --calibration`); results go in `docs/phase2_eval_report.md`.

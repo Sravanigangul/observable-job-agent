@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 
-</br>
+<br/>
 
 <p align="center">
   <img src="docs/images/architecture_part2.png" alt="Job Scout Phase 2 architecture" width="820">
@@ -30,9 +30,9 @@ ranks each with a **fit score (0–100)** plus an honest explanation of the matc
 and the gaps. Every LLM and tool call is traced in
 [Opik](https://www.comet.com/docs/opik/) from the very first run.
 
-It is the first entry in *The Observable Job Agent*, a series that builds one
+This is the code for *The Observable Job Agent*, a series that builds one
 agent while building the ability to see inside it: **Build → Evaluate →
-Self-Improve**.
+Self-Improve**. This release is **Part 2: Extend, then evaluate**.
 
 > **🎯 The observability difference:** most tutorials add telemetry at the end.
 > We don't. The agent gets instrumented *before* it gets good, so cost, latency,
@@ -82,7 +82,7 @@ Read the deep dives on [Jam with AI](https://jamwithai.substack.com).
 
 - **Python 3.12+**
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** package manager
-- API keys are **optional** — the app runs with none.
+- One **LLM key** for the agent steps — `OPENAI_API_KEY`, or free via Groq/Ollama. Everything else (tests, job sources, the validator) runs with **no keys at all**.
 
 ### ⚡ Get Started
 
@@ -104,13 +104,20 @@ make test
 make app
 ```
 
-**Runs with zero keys** via Remotive + a committed offline cache. Add keys when
-you want live international jobs, real ranking, and tracing. Every key has a free
-path — see [`docs/opik_setup.md`](docs/opik_setup.md).
+**Job sources run with zero keys** via Remotive + a committed offline cache, and
+`make test` needs nothing. The LLM steps — profile extraction, ranking,
+tailoring — need one model key: `OPENAI_API_KEY`, or a free path via
+`SCOUT_MODEL=groq:…` (free tier) or `ollama:…` (local). Opik tracing has its own
+free key — see [`docs/opik_setup.md`](docs/opik_setup.md).
 
 **Default model** is `openai:gpt-4o-mini`. Swap it with one env var: `SCOUT_MODEL`
 (e.g. `groq:llama-3.3-70b-versatile` for free, or `ollama:llama3.2` for local).
 Free models correctly show $0.00 cost in Opik.
+
+### 📓 Interactive tutorials
+
+- [`notebooks/phase2_evaluation.ipynb`](notebooks/phase2_evaluation.ipynb) — Part 2: the tailoring walkthrough, the stale-checkpoint bug live, datasets and eval suites (cost printed before every spend)
+- [`notebooks/phase1_walkthrough.ipynb`](notebooks/phase1_walkthrough.ipynb) — Part 1: the search agent end to end, reading your first trace
 
 ### 📊 Access Points
 
@@ -137,7 +144,7 @@ extract_profile(cv) → Profile ─┐
 ```
 
 - **`fetch_jobs`** is an LLM tool-calling node: the model *chooses* the `search_jobs` arguments (query, country, remote).
-- **`rank_jobs`** scores postings in batches of 5, one structured-output call per batch, capped at `SCOUT_MAX_JOBS` (default 10). Already-scored jobs keep their scores across reformulation loops — only new postings hit the model.
+- **`rank_jobs`** scores postings in batches of 4 (`SCOUT_RANK_BATCH`), one structured-output call per batch, capped at `SCOUT_MAX_JOBS` (default 10). Already-scored jobs keep their scores across reformulation loops — only new postings hit the model.
 - **`reformulate_query`** broadens the search if fewer than 5 jobs score ≥ 60, bounded to at most 2 loops. That conditional edge is what makes this an agent rather than a straight-line workflow.
 - **`tailor`** (Phase 2) runs as a *second invocation on the same thread*: it reads the search results from the checkpoint and selects/rewords items from your **CandidateCorpus** (CV + optional official LinkedIn data export — never scraped). **`validate_tailoring`** then checks every claim deterministically — its thresholds are env-tunable (`SCOUT_FAB_*`), and each report records the values it ran with in the Opik trace, so tuning them against your own CV is a measurable exercise. The PDF renders via `tectonic` (`brew install tectonic`); without it you get the `.tex` + an Overleaf pointer.
 
@@ -199,7 +206,7 @@ result still pops. Full chapter, demo script, and troubleshooting:
 | **LangGraph** | The agent graph + conditional reformulation loop |
 | **LangChain** | `init_chat_model`, LLM-driven tool calling |
 | **Opik / Comet** | Observability: traces, per-run cost, versioned prompts |
-| **Gradio** | Three-step wizard UI with streamed progress |
+| **Gradio** | Four-step wizard UI with streamed progress |
 | **Pydantic + pydantic-settings** | Typed schemas and configuration |
 | **httpx + pypdf** | Job-source HTTP and CV reading |
 | **Job sources** | JSearch, Adzuna, Remotive, committed offline cache |
@@ -212,6 +219,7 @@ result still pops. Full chapter, demo script, and troubleshooting:
 observable-job-agent/
 ├── src/job_scout/
 │   ├── app.py          # Gradio four-step wizard UI (Resume → Profile → Jobs → Tailor)
+│   ├── candidate_store.py  # the persisted candidate: profile + CV text + preferences
 │   ├── runner.py       # run orchestration shared by UI + batch (tracing, cost, latency)
 │   ├── profile.py      # CV text → Profile (pre-graph extraction)
 │   ├── corpus.py       # CandidateCorpus: CV + optional LinkedIn export (the grounding source)
@@ -225,12 +233,14 @@ observable-job-agent/
 │   ├── graph/          # graph.py (entry router + search + tailor), state.py, schemas.py, nodes/, prompts/
 │   ├── templates/      # cv.tex.j2 — the single ATS-friendly CV template
 │   └── tools/          # jobs_api.py (JSearch/Adzuna/Remotive/cache), cv_reader.py, research.py (Tavily)
+├── notebooks/          # phase1_walkthrough.ipynb, phase2_evaluation.ipynb (guided tours)
 ├── scripts/            # run_batch.py, run_tailor_batch.py, build_*_dataset.py, run_evals.py,
 │                       # setup_annotation_queue.py, snapshot_jobs.py, generate_fixture_*.py
 ├── data/               # cached_jobs.json, fixture_cvs/, fixture_linkedin/, labels/ (hand labels)
 ├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md,
-│                       # optimizing_latency.md, baseline.json, tailor_batch.json, phase*_findings.md
-└── tests/              # 100+ tests (LLM mocked, network mocked, Opik off)
+│                       # optimizing_latency.md, baseline.json, tailor_batch.json,
+│                       # phase*_findings.md, phase2_eval_report.md
+└── tests/              # 190 tests (LLM mocked, network mocked, Opik off)
 ```
 
 ### 🔧 Essential Commands
@@ -280,7 +290,7 @@ keys via Remotive + the offline cache.
 
 <div align="center">
   <h3>🎉 Ready to build an agent you can actually trust?</h3>
-  <p><strong>Clone it, <code>make app</code>, and drop in a fixture CV.</strong></p>
+  <p><strong>Clone it, add one LLM key, <code>make app</code>, and drop in a fixture CV.</strong></p>
   <p><em>Built with love by <a href="https://www.linkedin.com/in/shirin-khosravi-jam/">Shirin Khosravi Jam</a></em></p>
 </div>
 

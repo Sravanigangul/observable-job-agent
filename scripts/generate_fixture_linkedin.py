@@ -152,6 +152,10 @@ def junior_ds_us() -> None:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Regenerate the synthetic LinkedIn export ZIPs under data/fixture_linkedin/.")
+    parser.parse_args()
     senior_mle_eu()
     junior_ds_us()
     print(f"\n2 synthetic LinkedIn export fixtures written to {OUT_DIR}")

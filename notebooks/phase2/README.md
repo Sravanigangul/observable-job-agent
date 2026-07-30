@@ -68,4 +68,4 @@ Hand-labeling steps (yours, deliberately): correct
 Phase 3 closes the loop: test suites lock in expectations, the documented
 weaknesses get fixed through a trace-driven workflow, and the deliberately
 unpolished ranking + tailoring prompts get optimized — with before/after
-numbers. The weaknesses carried forward live in `reports/phase2_findings.md`.
+numbers. The weaknesses carried forward live in `docs/phase2_findings.md`.

@@ -5,9 +5,9 @@ fabrication validation) and built the evaluation stack. **Everything below is
 documented, not fixed** — fixing is Phase 3's story, so the weaknesses stay
 observable until then.
 
-Sources: `reports/tailor_batch.json` (15 tailoring cases, tags
+Sources: `docs/tailor_batch.json` (15 tailoring cases, tags
 `phase-2`/`tailor-batch`), the Opik experiments listed in
-`reports/phase2_eval_report.md`, and the trajectory feedback scores on 20
+`docs/phase2_eval_report.md`, and the trajectory feedback scores on 20
 traces.
 
 ## Phase 1 weaknesses, carried forward
