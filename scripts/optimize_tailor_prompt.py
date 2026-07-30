@@ -135,7 +135,8 @@ def main() -> None:
         print("\nDry plan only. Re-run with --yes to spend.")
         sys.exit(0)
 
-    from scripts.run_evals import _client  # configure_opik + OPENAI key export
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from run_evals import _client  # configure_opik + OPENAI key export
 
     client = _client()
     dataset, n_rows = _build_derived_dataset(client)
