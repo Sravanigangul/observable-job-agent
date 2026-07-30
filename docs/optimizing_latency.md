@@ -87,3 +87,36 @@ children and a cost of $0.00.
   ever read. Scoring first and explaining only the top 3 should roughly halve
   ranking latency — and it shifts `FitExplanationQuality` eval baselines, so
   it belongs in an eval-measured run, not a drive-by commit.
+
+## Phase 3 addendum: the concurrent source fan-out
+
+The honest footnote above named the next target: the sequential source
+fallback that "fails forward" one network wait at a time, exactly when the
+primary source returned nothing. Phase 3 shipped it as
+`SCOUT_CONCURRENT_SOURCES` (default on): the live sources fire together via
+`ThreadPoolExecutor` + `contextvars.copy_context()` (the same pattern
+`rank_jobs` proved), while the CONSUMPTION policy — priority order, the <5
+and <3 thresholds, the `sources_used` trace field — is unchanged. Only the
+waiting overlaps.
+
+Measured, deterministically (injected sources, 2.0s thin primary + 1.0s rich
+fallback, identical results and `sources_used` in both modes):
+
+| Mode | Wall time |
+|------|-----------|
+| sequential (Phase 1/2 behavior) | 3.01s |
+| concurrent (Phase 3 default) | 2.01s |
+
+The stacked waits collapse to the slowest single source: sum becomes max.
+
+Measured against the live APIs, honestly: when the primary is rich (or only
+one source answers at all), the two modes are within noise of each other
+(medians 1.23s vs 1.16s on an Adzuna-only cascade) — the win only exists in
+the multi-source fallback case, which is precisely the case that used to
+hurt. Same lesson as changes 6-7 above: small optimizations need several
+runs and a scenario you can actually reproduce, which is why the table above
+uses injected sources instead of network luck.
+
+Trade-off, stated plainly: concurrent mode queries lower-priority sources
+whose results may go unused, spending Adzuna/Remotive quota to buy latency.
+`SCOUT_CONCURRENT_SOURCES=false` restores the frugal sequential cascade.

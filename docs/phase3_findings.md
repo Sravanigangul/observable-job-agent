@@ -52,6 +52,38 @@ drift — which is the prompt's fault, not the validator's. That is what the
 optimizer is for. (Reproduce: `git show <validator-v2-commit>~2:` both files,
 revalidate the dataset's stored packs with each stack.)
 
+## The optimizer run
+
+`scripts/optimize_tailor_prompt.py --yes`: HierarchicalReflectiveOptimizer,
+task + reasoning model gpt-4.1-mini, 5 trials x 12 samples, 92 LLM calls.
+Metric: 1 - fabrication rate from the live `validate_pack` (deterministic; a
+parse failure scores zero with the reason attached). Grounded score
+0.772 -> 0.868 on the derived dataset; full history in
+`docs/phase3/optimizer_result.json`; the winning instruction block now IS
+`prompts/tailor.py` (Opik versions the change via `register_prompts()`).
+
+Offline confirmation, same suite + model + dataset as Phase 2's committed
+number: `fabrication_rate` (experiment `tailoring-gpt-4.1-mini`)
+**0.309 -> 0.1423 (-54%)**. On gpt-4o-mini: 0.1749. Live batch agreement: B2
+0.1288 vs B0 0.2768 (-53%).
+
+## Regression gates
+
+- `make gates`: deterministic — re-validates the stored tailoring packs and
+  fails above rate 0.27 (the paired measurement 0.2500 + margin). Zero LLM
+  calls, ~3s.
+- Opik Test Suite `job-scout-tailoring-suite` (8 items, 3 judged assertions,
+  `scripts/setup_test_suite.py`): the dashboard-visible gate; exits nonzero
+  under 75% pass rate. Judged, therefore reported, never blindly trusted.
+
+## Latency: the fan-out
+
+`SCOUT_CONCURRENT_SOURCES` (default on) collapses the source cascade's
+stacked waits to the slowest single source: 3.01s -> 2.01s in the
+deterministic thin-primary bench, no-op within noise when the primary is
+rich. Details + trade-off in `docs/optimizing_latency.md` (Phase 3
+addendum).
+
 ## Weakness-by-weakness status
 
 Filled in as the work lands; every Phase 2 weakness gets a verdict here.
