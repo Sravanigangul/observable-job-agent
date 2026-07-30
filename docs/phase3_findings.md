@@ -29,12 +29,28 @@ Raw run snapshots: `docs/phase3/b0_tailor_batch.json`, `b1_...`, `b2_...`.
 
 | Metric | B0 (baseline) | B1 (segmenter+validator v2) | B2 (+optimized prompt) |
 |--------|---------------|------------------------------|------------------------|
-| Fabrication rate | 0.2768 (62/224) | pending | pending |
-| Runs flagged | 14 of 14 | pending | pending |
-| Flags: cv_bullet / letter / skill | 29 / 30 / 3 | pending | pending |
-| Bullet flags in 0.55-0.65 near-miss band | 17 | pending | pending |
-| Mean cover letter words | 195.4 | pending | pending |
-| Batch cost (USD) | 0.049 | pending | pending |
+| Fabrication rate | 0.2768 (62/224) | 0.2555 (58/227) | pending |
+| Runs flagged | 14 of 14 | 14 of 14 | pending |
+| Flags: cv_bullet / letter / skill | 29 / 30 / 3 | 28 / 27 / 3 | pending |
+| Flags in 0.55-0.65 near-miss band | 17 | 18 | pending |
+| Mean cover letter words | 195.4 | 197.2 | pending |
+| Batch cost (USD) | 0.049 | 0.049 | pending |
+
+The live batches are noisy (fresh searches, fresh generations), so the
+validator's isolated effect was also measured the deterministic way: the 15
+UNCHANGED packs stored in `job-scout-tailoring-cases` (Phase 2's traces),
+re-validated under both stacks at identical thresholds:
+
+| Stack | Same 15 stored packs |
+|-------|----------------------|
+| v1 segmenter + v1 validator | 0.2664 (65/244) |
+| v2 segmenter + v2 validator | 0.2500 (61/244) |
+
+Honest reading: better matching reclaims only ~6% of flags (the unit-spelling
+near-misses it was built for). The bulk of the flag load is real rewrite
+drift — which is the prompt's fault, not the validator's. That is what the
+optimizer is for. (Reproduce: `git show <validator-v2-commit>~2:` both files,
+revalidate the dataset's stored packs with each stack.)
 
 ## Weakness-by-weakness status
 
