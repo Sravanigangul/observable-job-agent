@@ -285,6 +285,40 @@ def create_app() -> FastAPI:
         name = snap.profile.name if snap.profile else None
         return {"token": token, "dynamic_variables": greeting_variables(name, datetime.now().hour)}
 
+    @app.get("/api/voice/last-error")
+    def voice_last_error() -> dict:
+        """Why the last conversation died, in ElevenLabs' own words.
+
+        The browser SDK reports a bare "Server error: Unknown error" for every
+        failure, including the one readers will hit first — running out of free
+        conversation minutes, which arrives as code 1002 with a perfectly clear
+        reason attached. Asking after the fact is the only way to say something
+        useful, so the console calls this when a session drops.
+        """
+        settings = get_settings()
+        if not settings.elevenlabs_agent_id:
+            return {"reason": "", "quota": False}
+        headers = {"xi-api-key": settings.elevenlabs_api_key.get_secret_value()}
+        try:
+            listing = httpx.get(
+                "https://api.elevenlabs.io/v1/convai/conversations",
+                headers=headers,
+                params={"agent_id": settings.elevenlabs_agent_id, "page_size": 1},
+                timeout=10,
+            )
+            conversations = listing.json().get("conversations") or []
+            if not conversations or conversations[0].get("status") != "failed":
+                return {"reason": "", "quota": False}
+            detail = httpx.get(
+                f"https://api.elevenlabs.io/v1/convai/conversations/{conversations[0]['conversation_id']}",
+                headers=headers,
+                timeout=10,
+            )
+            reason = str(detail.json().get("metadata", {}).get("termination_reason") or "")
+        except (httpx.HTTPError, ValueError, KeyError):
+            return {"reason": "", "quota": False}
+        return {"reason": reason, "quota": "quota" in reason.lower()}
+
     @app.post("/api/tools/{name}")
     def call_tool(name: str, parameters: Annotated[dict | None, Body()] = None) -> dict:
         """Run one client tool. Defined sync on purpose: FastAPI gives it a

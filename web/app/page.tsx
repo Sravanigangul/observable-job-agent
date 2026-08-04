@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import JobvisOrb from "@/components/JobvisOrb";
 import { ActivityPanel, JobsPanel, NextPanel, PackPanel, nextStep } from "@/components/Panels";
-import { eventsUrl, getConfig, getSessionStart, getState, type Config, type State } from "@/lib/api";
+import { eventsUrl, getConfig, getLastVoiceError, getSessionStart, getState, type Config, type State } from "@/lib/api";
 import { GESTURES_ENABLED } from "@/lib/handTracker";
 import type { OrbMode } from "@/lib/orbScene";
 import { buildClientTools } from "@/lib/tools";
@@ -65,12 +65,27 @@ function Console() {
 
   const addLine = useCallback((line: Line) => setLines((all) => [...all, line]), []);
 
+  const explainFailure = useCallback(async () => {
+    const { reason, quota } = await getLastVoiceError();
+    if (!reason) return;
+    setError(
+      quota
+        ? `${reason} The ElevenLabs free tier includes about 15 conversation minutes a month, and they are a separate pool from TTS characters — check Usage on elevenlabs.io.`
+        : reason,
+    );
+  }, []);
+
   const clientTools = useMemo(() => buildClientTools(({ name }) => addLine({ role: "tool", text: name })), [addLine]);
 
   const conversation = useConversation({
     clientTools,
     onConnect: () => setError(""),
-    onError: (message: unknown) => setError(String(message)),
+    onError: (message: unknown) => {
+      setError(String(message));
+      // The SDK says "Server error: Unknown error" for everything, including
+      // running out of free minutes. Ask ElevenLabs what actually happened.
+      void explainFailure();
+    },
     onMessage: ({ message, source }: { message: string; source: string }) =>
       addLine({ role: source === "user" ? "you" : "jobvis", text: message }),
   });

@@ -39,6 +39,8 @@ export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureR
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const orbRef = useRef<OrbHandle | null>(null);
+  // Read by the pump below without re-creating the scene on every mode change.
+  const modeRef = useRef(mode);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -65,7 +67,10 @@ export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureR
       if (rounded !== published) {
         published = rounded;
         root.style.setProperty("--level", rounded.toFixed(3));
-        root.style.setProperty("--heat", Math.max(0, Math.min(1, (smoothed - 0.34) / 0.44)).toFixed(3));
+        // Warmth belongs to Jobvis speaking, same rule as the heart: your own
+        // voice drives this analyser too, and red should mean HE is talking.
+        const heat = modeRef.current === "speaking" ? Math.max(0, Math.min(1, (smoothed - 0.34) / 0.44)) : 0;
+        root.style.setProperty("--heat", heat.toFixed(3));
       }
       raf = requestAnimationFrame(pump);
     };
@@ -81,6 +86,7 @@ export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureR
   }, [getFrequencies]);
 
   useEffect(() => {
+    modeRef.current = mode;
     orbRef.current?.setMode(mode);
   }, [mode]);
 

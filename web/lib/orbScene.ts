@@ -269,6 +269,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   let level = 0;
   let smoothed = 0;
   let mode: OrbMode = "idle";
+  let warmth = 0;
   let spinX = 0;
   let spinY = 0;
   let momentumX = 0;
@@ -317,6 +318,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     faulted = fault;
     coreMaterial.color.setHex(fault ? PALETTE.error : PALETTE.cyan);
     heartMaterial.color.setHex(fault ? PALETTE.error : PALETTE.core);
+    if (fault) warmth = 0;
     shells.forEach((shell, i) => {
       (shell.mesh.material as THREE.MeshBasicMaterial).color.setHex(fault ? PALETTE.error : shellSpecs[i].color);
     });
@@ -347,9 +349,14 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     // never fakes it. The floor keeps ordinary speech cool: this should mean
     // "he is loud right now", not "a session is open".
     if (!faulted) {
-      const heat = THREE.MathUtils.smoothstep(smoothed, PEAK_FLOOR, PEAK_CEIL);
-      heartMaterial.color.copy(COOL_HEART).lerp(HOT_HEART, heat);
-      (halo.material as THREE.MeshBasicMaterial).color.copy(COOL_HALO).lerp(HOT_HEART, heat * 0.85);
+      // Red is reserved for Jobvis SPEAKING. Level alone is not enough: your own
+      // voice drives the analyser too, and a stale last frame would otherwise
+      // leave the heart glowing red into the silence. Not speaking, not hot.
+      const heat = mode === "speaking" ? THREE.MathUtils.smoothstep(smoothed, PEAK_FLOOR, PEAK_CEIL) : 0;
+      // Ease the return so it cools down rather than snapping back.
+      warmth += (heat - warmth) * Math.min(1, delta * 6);
+      heartMaterial.color.copy(COOL_HEART).lerp(HOT_HEART, warmth);
+      (halo.material as THREE.MeshBasicMaterial).color.copy(COOL_HALO).lerp(HOT_HEART, warmth * 0.85);
     }
     halo.scale.setScalar(1 + energy * 0.5);
     (halo.material as THREE.MeshBasicMaterial).opacity = 0.035 + energy * 0.16;

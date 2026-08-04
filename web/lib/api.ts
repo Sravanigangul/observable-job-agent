@@ -102,5 +102,14 @@ export async function callTool(name: string, parameters: Record<string, unknown>
   return await response.json();
 }
 
+/** Why the last conversation died. The SDK only ever says "Unknown error". */
+export async function getLastVoiceError(): Promise<{ reason: string; quota: boolean }> {
+  try {
+    return await getJson<{ reason: string; quota: boolean }>("/api/voice/last-error");
+  } catch {
+    return { reason: "", quota: false };
+  }
+}
+
 export const packUrl = (kind: "pdf" | "tex") => `${BASE}/api/pack/${kind}`;
 export const eventsUrl = () => `${BASE}/api/events`;

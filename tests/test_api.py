@@ -128,6 +128,36 @@ def test_the_console_registers_exactly_the_tools_the_agent_declares():
     assert sorted(CLIENT_TOOL_HANDLERS) == typescript
 
 
+def test_last_error_relays_the_quota_reason(client, monkeypatch, respx_mock):
+    """The SDK says "Unknown error" for everything; ElevenLabs knows better."""
+    voice_on(monkeypatch)
+    respx_mock.get("https://api.elevenlabs.io/v1/convai/conversations").mock(
+        return_value=httpx.Response(200, json={"conversations": [{"conversation_id": "conv_1", "status": "failed"}]})
+    )
+    respx_mock.get("https://api.elevenlabs.io/v1/convai/conversations/conv_1").mock(
+        return_value=httpx.Response(200, json={"metadata": {"termination_reason": "This request exceeds your quota limit."}})
+    )
+
+    body = client.get("/api/voice/last-error").json()
+    assert body["quota"] is True
+    assert "quota" in body["reason"]
+
+
+def test_last_error_is_quiet_when_the_last_call_was_fine(client, monkeypatch, respx_mock):
+    voice_on(monkeypatch)
+    respx_mock.get("https://api.elevenlabs.io/v1/convai/conversations").mock(
+        return_value=httpx.Response(200, json={"conversations": [{"conversation_id": "conv_1", "status": "done"}]})
+    )
+    assert client.get("/api/voice/last-error").json() == {"reason": "", "quota": False}
+
+
+def test_last_error_never_raises_when_elevenlabs_is_unreachable(client, monkeypatch, respx_mock):
+    """A diagnostic that fails must not become a second fault on screen."""
+    voice_on(monkeypatch)
+    respx_mock.get("https://api.elevenlabs.io/v1/convai/conversations").mock(side_effect=httpx.ConnectError("down"))
+    assert client.get("/api/voice/last-error").json() == {"reason": "", "quota": False}
+
+
 def test_token_upstream_failure_is_reported_not_swallowed(client, monkeypatch, respx_mock):
     voice_on(monkeypatch)
     respx_mock.get(api_module.TOKEN_URL).mock(return_value=httpx.Response(401, text="missing convai scope"))
