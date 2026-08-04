@@ -28,6 +28,14 @@ web-build: ## Build the Jobvis console into web/out (static export served by `ma
 web-dev: ## Next dev server on :3000 against the API on :8000 (run `make jobvis` too)
 	cd web && npm run dev
 
+.PHONY: web-assets
+web-assets: ## Vendor the MediaPipe hand-tracking assets (only needed for gesture control)
+	@mkdir -p web/public/mediapipe/wasm
+	cp web/node_modules/@mediapipe/tasks-vision/wasm/* web/public/mediapipe/wasm/
+	curl -fL -o web/public/mediapipe/hand_landmarker.task \
+		https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+	@echo "gestures ready — set NEXT_PUBLIC_JOBVIS_GESTURES=1 in web/.env.local and rebuild"
+
 .PHONY: batch
 batch: ## Run the baseline batch (prompts for --yes cost confirmation)
 	uv run python scripts/run_batch.py

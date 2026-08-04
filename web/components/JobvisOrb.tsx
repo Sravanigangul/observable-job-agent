@@ -34,6 +34,7 @@ export default function JobvisOrb({ mode, getFrequencies }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const orbRef = useRef<OrbHandle | null>(null);
   const [gesturesOn, setGesturesOn] = useState(false);
+  const [gestureStarting, setGestureStarting] = useState(false);
   const [gestureError, setGestureError] = useState("");
 
   useEffect(() => {
@@ -114,6 +115,10 @@ export default function JobvisOrb({ mode, getFrequencies }: Props) {
     let tracker: HandTracker | null = null;
     let cancelled = false;
 
+    // Nothing is live until getUserMedia resolves, and it sits pending for as
+    // long as Chrome's permission bubble is open. Say "starting" until then —
+    // claiming the camera is on while the browser is still asking is a lie.
+    setGestureStarting(true);
     startHandTracking(videoRef.current, {
       spinBy: (dx, dy) => orbRef.current?.spinBy(dx, dy),
       zoomBy: (factor) => orbRef.current?.zoomBy(factor),
@@ -125,13 +130,21 @@ export default function JobvisOrb({ mode, getFrequencies }: Props) {
       .catch((error: Error) => {
         setGestureError(error.message || "hand tracking unavailable");
         setGesturesOn(false);
-      });
+      })
+      .finally(() => setGestureStarting(false));
 
     return () => {
       cancelled = true;
+      setGestureStarting(false);
       tracker?.stop();
     };
   }, [gesturesOn]);
+
+  const gestureLabel = gestureStarting
+    ? "starting camera…"
+    : gesturesOn
+      ? "camera on — pinch to spin (G)"
+      : "enable hand control (G)";
 
   return (
     <div className="orb-wrap">
@@ -139,7 +152,7 @@ export default function JobvisOrb({ mode, getFrequencies }: Props) {
       {GESTURES_ENABLED && (
         <div className="orb-controls">
           <button type="button" className="ghost" onClick={() => setGesturesOn((on) => !on)}>
-            {gesturesOn ? "camera on — pinch to spin (G)" : "enable hand control (G)"}
+            {gestureLabel}
           </button>
           {gestureError && <span className="orb-error">{gestureError}</span>}
         </div>
