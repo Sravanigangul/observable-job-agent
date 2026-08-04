@@ -129,10 +129,10 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   const heartMaterial = new THREE.MeshBasicMaterial({
     color: PALETTE.core,
     transparent: true,
-    opacity: 0.75,
+    opacity: 0.72,
     blending: THREE.AdditiveBlending,
   });
-  const heart = new THREE.Mesh(new THREE.SphereGeometry(0.16, 32, 32), heartMaterial);
+  const heart = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 32), heartMaterial);
   group.add(heart);
 
   const halo = new THREE.Mesh(
@@ -163,9 +163,9 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
 
   // --- shells ---------------------------------------------------------------
   const shellSpecs = [
-    { radius: 1.15, detail: 1, opacity: 0.42, speed: 0.16, color: PALETTE.cyan },
-    { radius: 1.5, detail: 2, opacity: 0.24, speed: -0.1, color: PALETTE.violet },
-    { radius: 1.95, detail: 1, opacity: 0.18, speed: 0.06, color: PALETTE.magenta },
+    { radius: 1.15, detail: 1, opacity: 0.576, speed: 0.16, color: PALETTE.cyan },
+    { radius: 1.5, detail: 2, opacity: 0.32, speed: -0.1, color: PALETTE.violet },
+    { radius: 1.95, detail: 1, opacity: 0.24, speed: 0.06, color: PALETTE.magenta },
   ];
   const shells = shellSpecs.map((spec) => {
     const mesh = new THREE.Mesh(
@@ -262,7 +262,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   // --- post -----------------------------------------------------------------
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.7, 0.22);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.72, 0.8, 0.15);
   composer.addPass(bloom);
   const chroma = new ShaderPass(ChromaticAberrationShader);
   composer.addPass(chroma);
@@ -342,9 +342,9 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
 
     core.scale.setScalar(1 + energy * 0.35);
     core.rotation.y += delta * (0.35 + smoothed * 2.2);
-    coreMaterial.opacity = 0.26 + energy * 0.3;
+    coreMaterial.opacity = 0.32 + energy * 0.36;
     heart.scale.setScalar(1 + energy * 0.55);
-    heartMaterial.opacity = 0.4 + energy * 0.32;
+    heartMaterial.opacity = 0.48 + energy * 0.32;
 
     // Peak heat. The heart runs ice → amber → hot red as the voice drives it,
     // and only from `smoothed` (the real audio level), so the idle breathing
@@ -361,38 +361,38 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
       (halo.material as THREE.MeshBasicMaterial).color.copy(COOL_HALO).lerp(HOT_HEART, warmth * 0.85);
     }
     halo.scale.setScalar(1 + energy * 0.5);
-    (halo.material as THREE.MeshBasicMaterial).opacity = 0.022 + energy * 0.1;
+    (halo.material as THREE.MeshBasicMaterial).opacity = 0.028 + energy * 0.128;
 
     spiral.rotation.y -= delta * (0.6 + smoothed * 2.6);
-    (spiral.material as THREE.LineBasicMaterial).opacity = 0.2 + energy * 0.34;
+    (spiral.material as THREE.LineBasicMaterial).opacity = 0.224 + energy * 0.4;
 
     shells.forEach((shell, i) => {
       shell.mesh.rotation.y += delta * shell.speed;
       shell.mesh.rotation.x += delta * shell.speed * 0.45;
       shell.mesh.scale.setScalar(1 + smoothed * 0.09);
       const material = shell.mesh.material as THREE.MeshBasicMaterial;
-      material.opacity = shell.baseOpacity * (0.62 + energy * 0.7);
+      material.opacity = shell.baseOpacity * (0.7 + energy * 0.9);
       // The shimmer: each shell's hue drifts on its own phase, so the whole
       // thing cycles through the spectrum instead of sitting on three colours.
       if (!faulted) {
         const drift = Math.sin(time * 0.22 + i * 2.1) * 0.07;
-        material.color.setHSL((shell.hue + drift + 1) % 1, 0.95, 0.52 + energy * 0.1);
+        material.color.setHSL((shell.hue + drift + 1) % 1, 0.95, 0.58 + energy * 0.12);
       }
     });
 
     debris.rotation.y += delta * 0.045;
     debris.rotation.x = Math.sin(time * 0.12) * 0.12;
-    (debris.material as THREE.PointsMaterial).opacity = 0.26 + energy * 0.3;
+    (debris.material as THREE.PointsMaterial).opacity = 0.32 + energy * 0.36;
 
     ambientField.rotation.y += delta * 0.012;
     ambientField.rotation.x = Math.sin(time * 0.05) * 0.06;
-    (ambientField.material as THREE.PointsMaterial).opacity = 0.2 + energy * 0.22;
+    (ambientField.material as THREE.PointsMaterial).opacity = 0.256 + energy * 0.272;
 
     rings.forEach((ring, i) => {
       ring.rotation.z += delta * (0.22 + i * 0.09) * (i % 2 === 0 ? 1 : -1);
       // The sweep: each ring rises and falls out of phase with the others.
       ring.position.y = Math.sin(time * 0.55 + i * 2.1) * 0.85;
-      (ring.material as THREE.MeshBasicMaterial).opacity = 0.1 + energy * 0.3;
+      (ring.material as THREE.MeshBasicMaterial).opacity = 0.128 + energy * 0.36;
     });
 
     // Drag momentum, then a slow drift so the orb is never quite still.
@@ -403,7 +403,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     group.rotation.y = spinY + time * 0.05;
     group.rotation.x = THREE.MathUtils.clamp(spinX, -0.9, 0.9);
 
-    bloom.strength = 0.42 + energy * 0.55;
+    bloom.strength = 0.76 + energy * 0.84;
     chroma.uniforms.amount.value = 0.0032 + smoothed * 0.007;
 
     camera.position.z += (distance - camera.position.z) * Math.min(1, delta * 6);
