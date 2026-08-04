@@ -32,6 +32,7 @@ from job_scout.tools.cv_reader import CVReadError, extract_cv_text
 from job_scout.tracing import opik_url, register_prompts
 from job_scout.voice import bridge as voice_bridge
 from job_scout.voice import is_voice_available
+from job_scout.voice.announce import run_announcement
 
 CAPTION = "Prepares applications — never submits them."
 
@@ -621,40 +622,6 @@ def _voice_context(text: str) -> None:
     get_voice_session().share_context(text)
 
 
-def _run_announcement(run) -> str:
-    """The 'System note' that makes Jobvis speak, unprompted, about a finished run."""
-    if run.failed:
-        return f"System note: the {run.kind} failed ({run.error or 'unknown error'}). Apologize briefly and suggest trying again."
-    if run.kind == "search" and run.search_result is not None:
-        ranked = run.search_result.ranked_jobs
-        if not ranked:
-            return (
-                "System note: the job search finished but found no matching jobs. "
-                "Break it gently; suggest a more detailed resume or trying again later."
-            )
-        top = ranked[0]
-        return (
-            f"System note: the job search just finished — {len(ranked)} jobs ranked, now on screen. "
-            f"Top match: {top.job.title} at {top.job.company}, {top.fit_score} out of 100. "
-            "Brief the user in one or two sentences and offer to run through the top three."
-        )
-    if run.kind == "tailor" and run.tailor_result is not None:
-        result = run.tailor_result
-        if result.pack is None:
-            return "System note: tailoring finished but produced no application. Apologize and suggest trying again."
-        flags = result.fabrication_flags
-        verdict = (
-            "every claim checked against the CV, no flags"
-            if flags == 0
-            else f"{flags} statement{'s' if flags != 1 else ''} could not be verified — advise an on-screen review"
-        )
-        return (
-            "System note: the application pack is ready and on screen — cover letter and tailored CV with downloads. "
-            f"Fabrication check: {verdict}. Announce it and offer the highlights."
-        )
-    return f"System note: the {run.kind} finished; the results are on screen."
-
-
 def _transcript_html(lines: list[tuple[str, str]]) -> str:
     """Render the conversation transcript, tool calls included — the grounding on display."""
     if not lines:
@@ -741,7 +708,7 @@ def on_voice_tick():
                 gr.update(visible=False),
             )
     if run is not None:
-        session.announce(_run_announcement(run))  # the butler brings the news himself
+        session.announce(run_announcement(run))  # the butler brings the news himself
     if run is not None and run.kind == "search" and run.search_result is not None and not run.failed:
         result = run.search_result
         choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
@@ -895,7 +862,7 @@ def on_jarvis_tick():
     bridge = voice_bridge.get_bridge()
     run = bridge.pop_finished_run()
     if run is not None:
-        session.announce(_run_announcement(run))
+        session.announce(run_announcement(run))
     snap = bridge.snapshot()
     values = voice_bridge.checkpoint_values(snap.thread_id)
     pack_html_str, pdf_btn, tex_btn = _jarvis_pack_panel(values, snap)

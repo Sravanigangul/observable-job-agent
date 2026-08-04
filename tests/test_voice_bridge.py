@@ -146,6 +146,39 @@ def test_tailor_run_uses_same_thread_and_zip(monkeypatch, sample_profile):
     assert run is not None and run.tailor_result is result
 
 
+def test_subscribers_all_see_the_run_and_the_pop_still_works(monkeypatch, sample_profile):
+    """Two listeners plus the wizard: everyone gets the finished run, nobody races."""
+    result = RunResult(ranked_jobs=[RankedJob(job=make_job("j1", "DS", "Acme"), fit_score=90, fit_explanation="fits")])
+    monkeypatch.setattr(bridge_module, "stream_search", search_stream(result))
+
+    bridge = VoiceBridge()
+    bridge.register_thread("t1")
+    bridge.record_profile(sample_profile, "cv text", "t1")
+    console, second = bridge.subscribe(), bridge.subscribe()
+
+    assert bridge.start_search() is None
+    assert wait_until(lambda: bridge.run_status()["done"])
+
+    assert console.get(timeout=2).search_result is result
+    assert second.get(timeout=2).search_result is result
+    assert bridge.pop_finished_run() is not None  # the wizard's pop is untouched
+
+
+def test_unsubscribe_stops_the_feed(monkeypatch, sample_profile):
+    monkeypatch.setattr(bridge_module, "stream_search", search_stream(RunResult()))
+    bridge = VoiceBridge()
+    bridge.register_thread("t1")
+    bridge.record_profile(sample_profile, "cv text", "t1")
+
+    feed = bridge.subscribe()
+    bridge.unsubscribe(feed)
+    bridge.unsubscribe(feed)  # a second disconnect must not explode
+
+    assert bridge.start_search() is None
+    assert wait_until(lambda: bridge.run_status()["done"])
+    assert feed.empty()
+
+
 def test_exploding_stream_is_contained(monkeypatch, sample_profile):
     def exploding(profile, **kwargs):
         yield ("status", "searching jobs…")

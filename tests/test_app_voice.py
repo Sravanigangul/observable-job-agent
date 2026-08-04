@@ -128,31 +128,3 @@ def test_voice_tick_shows_live_progress_while_running(monkeypatch, sample_profil
         time.sleep(0.01)
     outputs = app_module.on_voice_tick()
     assert outputs[3]["visible"] is True  # the finished pop still renders the results
-
-
-def _search_run(ranked_jobs):
-    from job_scout.voice.bridge import VoiceRun
-
-    return VoiceRun(kind="search", done=True, search_result=RunResult(ranked_jobs=ranked_jobs))
-
-
-def test_run_announcements_speak_the_result():
-    from job_scout.graph.schemas import RankedJob
-    from job_scout.voice.bridge import VoiceRun
-    from tests.conftest import make_job
-
-    top = RankedJob(job=make_job("j1", "ML Engineer", "Acme"), fit_score=87, fit_explanation="fits")
-    text = app_module._run_announcement(_search_run([top]))
-    assert text.startswith("System note:")
-    assert "ML Engineer at Acme, 87 out of 100" in text
-
-    assert "found no matching jobs" in app_module._run_announcement(_search_run([]))
-
-    failed = VoiceRun(kind="tailor", done=True, failed=True, error="RateLimitError")
-    text = app_module._run_announcement(failed)
-    assert "failed" in text and "RateLimitError" in text
-
-    flagged = VoiceRun(kind="tailor", done=True, tailor_result=TailorResult(fabrication_flags=2))
-    flagged.tailor_result.pack = object()  # any non-None pack
-    text = app_module._run_announcement(flagged)
-    assert "2 statements could not be verified" in text

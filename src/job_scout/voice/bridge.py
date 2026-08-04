@@ -15,6 +15,7 @@ Two invariants worth naming:
 
 from __future__ import annotations
 
+import queue
 import threading
 from dataclasses import dataclass, replace
 from typing import cast
@@ -71,6 +72,7 @@ class VoiceBridge:
         self._lock = threading.Lock()
         self._snapshot = WizardSnapshot()
         self._run: VoiceRun | None = None
+        self._subscribers: list[queue.SimpleQueue[VoiceRun]] = []
 
     def register_thread(self, thread_id: str) -> None:
         """A fresh wizard session: forget everything from the previous one."""
@@ -135,6 +137,26 @@ class VoiceBridge:
             run.ui_pushed = True
             return run
 
+    def subscribe(self) -> queue.SimpleQueue[VoiceRun]:
+        """A private feed of finished runs, for consumers that must not race.
+
+        `pop_finished_run` hands a run to whoever asks FIRST — fine when the
+        Gradio wizard was the only listener, wrong now that the browser console
+        listens too: one surface would render the run and the other would never
+        hear about it. Each subscriber gets its own queue instead, so a finished
+        run reaches every listener exactly once. The wizard keeps popping.
+        """
+        with self._lock:
+            feed: queue.SimpleQueue[VoiceRun] = queue.SimpleQueue()
+            self._subscribers.append(feed)
+            return feed
+
+    def unsubscribe(self, feed: queue.SimpleQueue[VoiceRun]) -> None:
+        """Drop a feed when its consumer goes away (a closed SSE connection)."""
+        with self._lock:
+            if feed in self._subscribers:
+                self._subscribers.remove(feed)
+
     def _launch(self, kind: str, drive) -> str | None:
         with self._lock:
             if self._run is not None and not self._run.done:
@@ -156,6 +178,10 @@ class VoiceBridge:
             run.done = True
             if not failed:
                 self._snapshot = replace(self._snapshot, step=step)
+            # Callers set search_result/tailor_result before finishing, so what
+            # subscribers receive here is always a complete run.
+            for feed in self._subscribers:
+                feed.put(run)
 
     def _drive_search(self, snap: WizardSnapshot, run: VoiceRun) -> None:
         assert snap.profile is not None  # guarded by start_search
