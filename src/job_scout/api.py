@@ -25,7 +25,7 @@ import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 import httpx
@@ -157,8 +157,26 @@ def _render_paths() -> tuple[Path | None, Path | None]:
     return _RENDER_CACHE["pdf"], _RENDER_CACHE["tex"]
 
 
+def _jsonable(value: Any, path: str = "") -> Any:
+    """Coerce a payload to something json.dumps accepts, loudly.
+
+    One unserializable leaf used to raise straight out of the SSE generator,
+    which kills the connection — the console then sits there looking fine while
+    every live update silently stops. A degraded frame beats a dead stream, so
+    the offender becomes its repr and says where it was.
+    """
+    if isinstance(value, dict):
+        return {k: _jsonable(v, f"{path}.{k}") for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_jsonable(v, f"{path}[{i}]") for i, v in enumerate(value)]
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    print(f"jobvis: {path or 'payload'} is not JSON-serializable ({type(value).__name__}); sending its repr")
+    return repr(value)
+
+
 def _sse(event: str, payload: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(_jsonable(payload, event))}\n\n"
 
 
 async def event_stream(disconnected: Callable[[], Awaitable[bool]], poll: float = 0.25) -> AsyncIterator[str]:
@@ -279,7 +297,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/state")
     def state() -> dict:
-        return current_state()
+        # Same guard as the SSE frames: the console losing its state endpoint is
+        # a worse failure than one field arriving as a repr.
+        return _jsonable(current_state(), "state")
 
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:

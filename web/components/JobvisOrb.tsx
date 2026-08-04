@@ -47,14 +47,34 @@ export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureR
     orbRef.current = orb;
 
     let raf = 0;
+    let smoothed = 0;
+    let published = -1;
+    const root = document.documentElement;
+
     const pump = () => {
-      orb.setLevel(levelFrom(getFrequencies()));
+      const level = levelFrom(getFrequencies());
+      orb.setLevel(level);
+
+      // The room reacts too, not just the orb: --level drives a faint
+      // full-screen radiance and --heat warms it at peaks. Eased here rather
+      // than in CSS so the glow cannot strobe on a single loud frame, and
+      // quantised so we are not writing a custom property 60 times a second
+      // for changes nobody can see.
+      smoothed += (level - smoothed) * 0.12;
+      const rounded = Math.round(smoothed * 40) / 40;
+      if (rounded !== published) {
+        published = rounded;
+        root.style.setProperty("--level", rounded.toFixed(3));
+        root.style.setProperty("--heat", Math.max(0, Math.min(1, (smoothed - 0.34) / 0.44)).toFixed(3));
+      }
       raf = requestAnimationFrame(pump);
     };
     raf = requestAnimationFrame(pump);
 
     return () => {
       cancelAnimationFrame(raf);
+      root.style.setProperty("--level", "0");
+      root.style.setProperty("--heat", "0");
       orb.dispose();
       orbRef.current = null;
     };
@@ -111,6 +131,18 @@ export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureR
     };
   }, []);
 
+  // Callbacks live in refs so the effect below depends on `gesturesOn` ALONE.
+  // An inline handler from the parent is a new function every render, and with
+  // it in the dep array the tracker tore down and restarted on every state
+  // change — which is exactly the "play() interrupted by a new load request"
+  // the console reported.
+  const readyRef = useRef(onGestureReady);
+  const errorRef = useRef(onGestureError);
+  useEffect(() => {
+    readyRef.current = onGestureReady;
+    errorRef.current = onGestureError;
+  });
+
   // The webcam only opens once the HUD toggle flips on, and closes when it flips off.
   useEffect(() => {
     if (!gesturesOn || !videoRef.current) return;
@@ -127,16 +159,16 @@ export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureR
           return;
         }
         tracker = started;
-        onGestureReady(true);
+        readyRef.current(true);
       })
-      .catch((error: Error) => onGestureError(error.message || "hand tracking unavailable"));
+      .catch((error: Error) => errorRef.current(error.message || "hand tracking unavailable"));
 
     return () => {
       cancelled = true;
-      onGestureReady(false);
+      readyRef.current(false);
       tracker?.stop();
     };
-  }, [gesturesOn, onGestureReady, onGestureError]);
+  }, [gesturesOn]);
 
   return (
     <>

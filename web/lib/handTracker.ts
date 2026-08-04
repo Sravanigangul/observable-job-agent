@@ -55,7 +55,14 @@ export async function startHandTracking(video: HTMLVideoElement, actions: HandAc
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
   video.srcObject = stream;
-  await video.play();
+  try {
+    await video.play();
+  } catch (error) {
+    // "The play() request was interrupted by a new load request" — the element
+    // was re-pointed while play() was pending. Not a tracking failure, and it
+    // must not surface as one; the loop below reads whatever frames arrive.
+    if (!(error instanceof DOMException) || error.name !== "AbortError") throw error;
+  }
 
   let running = true;
   let pinching = false;

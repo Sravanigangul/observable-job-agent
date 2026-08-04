@@ -83,6 +83,14 @@ export type OrbHandle = {
 const MIN_DISTANCE = 3.0;
 const MAX_DISTANCE = 12.0;
 
+// The heart's peak response: cool at rest, hot red when the voice drives hard.
+// The floor is deliberately above conversational level so the red MEANS a peak.
+const PEAK_FLOOR = 0.34;
+const PEAK_CEIL = 0.78;
+const COOL_HEART = new THREE.Color(0xeafcff);
+const HOT_HEART = new THREE.Color(0xff2d3a);
+const COOL_HALO = new THREE.Color(0xff3dda);
+
 export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -271,10 +279,21 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   const timer = new THREE.Timer();
   timer.connect(document);
 
+  // Track the CSS size ourselves. Comparing against canvas.width does NOT work:
+  // setPixelRatio makes the drawing buffer a multiple of the CSS size, so on any
+  // retina display the check never matched and this ran every single frame —
+  // re-allocating the composer targets, and resetting the camera distance, which
+  // silently undid every zoom the moment it was applied.
+  let lastWidth = 0;
+  let lastHeight = 0;
+  let wide: boolean | null = null;
+
   function resize() {
     const width = canvas.clientWidth || 1;
     const height = canvas.clientHeight || 1;
-    if (canvas.width === width && canvas.height === height) return;
+    if (width === lastWidth && height === lastHeight) return;
+    lastWidth = width;
+    lastHeight = height;
     renderer.setSize(width, height, false);
     composer.setSize(width, height);
     bloom.setSize(width, height);
@@ -282,8 +301,14 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     camera.updateProjectionMatrix();
     // The slab occupies the left edge on wide screens; sit the core right of it
     // so the composition balances, then let the outer shells reach back under.
-    group.position.x = width >= 900 ? 0.55 : 0;
-    distance = restingDistance();
+    const nowWide = width >= 900;
+    group.position.x = nowWide ? 0.55 : 0;
+    // Only re-seat the camera when the layout actually flips between the wide
+    // and narrow compositions — resizing a window should not throw away a zoom.
+    if (wide !== nowWide) {
+      wide = nowWide;
+      distance = restingDistance();
+    }
   }
 
   let faulted = false;
@@ -316,6 +341,16 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     coreMaterial.opacity = 0.4 + energy * 0.45;
     heart.scale.setScalar(1 + energy * 0.55);
     heartMaterial.opacity = 0.6 + energy * 0.4;
+
+    // Peak heat. The heart runs ice → amber → hot red as the voice drives it,
+    // and only from `smoothed` (the real audio level), so the idle breathing
+    // never fakes it. The floor keeps ordinary speech cool: this should mean
+    // "he is loud right now", not "a session is open".
+    if (!faulted) {
+      const heat = THREE.MathUtils.smoothstep(smoothed, PEAK_FLOOR, PEAK_CEIL);
+      heartMaterial.color.copy(COOL_HEART).lerp(HOT_HEART, heat);
+      (halo.material as THREE.MeshBasicMaterial).color.copy(COOL_HALO).lerp(HOT_HEART, heat * 0.85);
+    }
     halo.scale.setScalar(1 + energy * 0.5);
     (halo.material as THREE.MeshBasicMaterial).opacity = 0.035 + energy * 0.16;
 

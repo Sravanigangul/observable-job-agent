@@ -54,6 +54,14 @@ function Console() {
   const [engaging, setEngaging] = useState(false);
   const [gesturesOn, setGesturesOn] = useState(false);
   const [gesturesLive, setGesturesLive] = useState(false);
+  // Kept apart from `error` on purpose: a camera problem is a HUD footnote, not
+  // a fault in the conversation. It must not turn the orb amber.
+  const [gestureError, setGestureError] = useState("");
+
+  const onGestureError = useCallback((message: string) => {
+    setGestureError(message);
+    setGesturesOn(false);
+  }, []);
 
   const addLine = useCallback((line: Line) => setLines((all) => [...all, line]), []);
 
@@ -75,6 +83,14 @@ function Console() {
   });
 
   const connected = conversation.status === "connected";
+  // The SSE stream fires whether or not anybody is talking to Jobvis: the
+  // wizard's click path emits screen events, and a background run finishes on
+  // its own schedule. Both SDK calls below throw "No active conversation" when
+  // no session is up, so the handlers check this ref rather than assuming one.
+  const connectedRef = useRef(connected);
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
 
   useEffect(() => {
     getConfig().then(setConfig).catch(() => setError("The Jobvis API is not reachable. Is `make app` running?"));
@@ -89,11 +105,13 @@ function Console() {
     source.addEventListener("run_finished", (event) => {
       const payload = JSON.parse((event as MessageEvent).data) as { text: string };
       addLine({ role: "system", text: payload.text });
-      conversationRef.current.sendUserMessage(payload.text);
+      // Replaying it as a user message is what makes the agent SPEAK. With no
+      // session there is nobody to speak to; the panel still repaints.
+      if (connectedRef.current) conversationRef.current.sendUserMessage(payload.text);
     });
     source.addEventListener("context", (event) => {
       const payload = JSON.parse((event as MessageEvent).data) as { text: string };
-      conversationRef.current.sendContextualUpdate(payload.text);
+      if (connectedRef.current) conversationRef.current.sendContextualUpdate(payload.text);
     });
     return () => source.close();
   }, [addLine]);
@@ -144,11 +162,9 @@ function Console() {
         getFrequencies={getFrequencies}
         gesturesOn={gesturesOn}
         onGestureReady={setGesturesLive}
-        onGestureError={(message) => {
-          setError(message);
-          setGesturesOn(false);
-        }}
+        onGestureError={onGestureError}
       />
+      <div className="radiance" aria-hidden="true" />
       <div className="vignette" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />
 
@@ -166,10 +182,13 @@ function Console() {
           <button
             type="button"
             className={`pill ${gesturesLive ? "live" : ""}`}
-            onClick={() => setGesturesOn((on) => !on)}
-            title="Pinch to spin the orb, two hands to zoom"
+            onClick={() => {
+              setGestureError("");
+              setGesturesOn((on) => !on);
+            }}
+            title={gestureError || "Pinch to spin the orb, two hands to zoom"}
           >
-            {gesturesOn ? (gesturesLive ? "hands on" : "starting camera…") : "hands"}
+            {gestureError ? "hands ✕" : gesturesOn ? (gesturesLive ? "hands on" : "starting camera…") : "hands"}
           </button>
         )}
         <a className="pill quiet" href={config?.wizard_url ?? "http://localhost:7860"} target="_blank" rel="noopener">
