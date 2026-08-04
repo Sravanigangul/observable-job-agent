@@ -306,11 +306,22 @@ def run_search(
     jobs: list[JobPosting] = []
     used: list[str] = []
 
+    # One span per source, so the trace answers "which source was slow" instead
+    # of only "the search took 3 seconds" — the difference between diagnosing
+    # the waterfall and guessing at it. See docs/ollie.md.
+    #
+    # Imported here, not at module scope: job_scout.tracing pulls in the graph,
+    # which imports this module back (the pre-existing cold-import cycle).
+    from job_scout.tracing import traced_call
+
+    def _spanned(name: str, fn: Callable[[], list[JobPosting]]) -> Callable[[], list[JobPosting]]:
+        return traced_call(f"source.{name}", fn, metadata={"source": name, "query": query, "location": location or ""})
+
     fetchers: dict[str, Callable[[], list[JobPosting]]] = {}
     if jsearch.available:
-        fetchers["jsearch"] = lambda: jsearch.fetch(query, location, country, remote, limit)
-    fetchers["adzuna"] = lambda: adzuna.fetch(query, location, country, remote, limit)
-    fetchers["remotive"] = lambda: remotive.fetch(query, location, country, remote, limit)
+        fetchers["jsearch"] = _spanned("jsearch", lambda: jsearch.fetch(query, location, country, remote, limit))
+    fetchers["adzuna"] = _spanned("adzuna", lambda: adzuna.fetch(query, location, country, remote, limit))
+    fetchers["remotive"] = _spanned("remotive", lambda: remotive.fetch(query, location, country, remote, limit))
 
     concurrent = get_settings().scout_concurrent_sources and len(fetchers) > 1
     pool: ThreadPoolExecutor | None = None
