@@ -65,6 +65,21 @@ class VoiceRun:
     ui_pushed: bool = False
 
 
+@dataclass(frozen=True)
+class BridgeEvent:
+    """Something a listening console should hear about.
+
+    Two kinds, because ElevenLabs treats them differently and so should we:
+    ``run_finished`` is news the agent should SAY (the console replays it as a
+    user message), while ``screen`` is something that merely happened in the
+    wizard — context the agent should know but not react to out loud.
+    """
+
+    kind: str  # "run_finished" | "screen"
+    run: VoiceRun | None = None
+    text: str = ""
+
+
 class VoiceBridge:
     """Thread-safe registry of the active wizard session + voice-run manager."""
 
@@ -72,7 +87,7 @@ class VoiceBridge:
         self._lock = threading.Lock()
         self._snapshot = WizardSnapshot()
         self._run: VoiceRun | None = None
-        self._subscribers: list[queue.SimpleQueue[VoiceRun]] = []
+        self._subscribers: list[queue.SimpleQueue[BridgeEvent]] = []
 
     def register_thread(self, thread_id: str) -> None:
         """A fresh wizard session: forget everything from the previous one."""
@@ -137,25 +152,39 @@ class VoiceBridge:
             run.ui_pushed = True
             return run
 
-    def subscribe(self) -> queue.SimpleQueue[VoiceRun]:
-        """A private feed of finished runs, for consumers that must not race.
+    def subscribe(self) -> queue.SimpleQueue[BridgeEvent]:
+        """A private event feed, for consumers that must not race each other.
 
         `pop_finished_run` hands a run to whoever asks FIRST — fine when the
         Gradio wizard was the only listener, wrong now that the browser console
         listens too: one surface would render the run and the other would never
-        hear about it. Each subscriber gets its own queue instead, so a finished
-        run reaches every listener exactly once. The wizard keeps popping.
+        hear about it. Each subscriber gets its own queue instead, so an event
+        reaches every listener exactly once. The wizard keeps popping.
         """
         with self._lock:
-            feed: queue.SimpleQueue[VoiceRun] = queue.SimpleQueue()
+            feed: queue.SimpleQueue[BridgeEvent] = queue.SimpleQueue()
             self._subscribers.append(feed)
             return feed
 
-    def unsubscribe(self, feed: queue.SimpleQueue[VoiceRun]) -> None:
+    def unsubscribe(self, feed: queue.SimpleQueue[BridgeEvent]) -> None:
         """Drop a feed when its consumer goes away (a closed SSE connection)."""
         with self._lock:
             if feed in self._subscribers:
                 self._subscribers.remove(feed)
+
+    def note_screen_event(self, text: str) -> None:
+        """Tell listening consoles what just happened in the wizard.
+
+        The click path and the voice path drive the same session, so a person
+        who uploads a CV on screen while talking to Jobvis should not have to
+        narrate it. Silent context, never speech.
+        """
+        self._publish(BridgeEvent("screen", text=text))
+
+    def _publish(self, event: BridgeEvent) -> None:
+        with self._lock:
+            for feed in self._subscribers:
+                feed.put(event)
 
     def _launch(self, kind: str, drive) -> str | None:
         with self._lock:
@@ -178,10 +207,9 @@ class VoiceBridge:
             run.done = True
             if not failed:
                 self._snapshot = replace(self._snapshot, step=step)
-            # Callers set search_result/tailor_result before finishing, so what
-            # subscribers receive here is always a complete run.
-            for feed in self._subscribers:
-                feed.put(run)
+        # Callers set search_result/tailor_result before finishing, so what
+        # subscribers receive here is always a complete run.
+        self._publish(BridgeEvent("run_finished", run=run))
 
     def _drive_search(self, snap: WizardSnapshot, run: VoiceRun) -> None:
         assert snap.profile is not None  # guarded by start_search

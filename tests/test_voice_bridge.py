@@ -159,9 +159,23 @@ def test_subscribers_all_see_the_run_and_the_pop_still_works(monkeypatch, sample
     assert bridge.start_search() is None
     assert wait_until(lambda: bridge.run_status()["done"])
 
-    assert console.get(timeout=2).search_result is result
-    assert second.get(timeout=2).search_result is result
+    for feed in (console, second):
+        event = feed.get(timeout=2)
+        assert event.kind == "run_finished"
+        assert event.run is not None and event.run.search_result is result
     assert bridge.pop_finished_run() is not None  # the wizard's pop is untouched
+
+
+def test_screen_events_reach_listeners_as_silent_context():
+    """A wizard click while Jobvis listens is context, not news to announce."""
+    bridge = VoiceBridge()
+    console = bridge.subscribe()
+
+    bridge.note_screen_event("Screen event: the user just uploaded a CV.")
+
+    event = console.get(timeout=2)
+    assert event.kind == "screen" and event.run is None
+    assert "uploaded a CV" in event.text
 
 
 def test_unsubscribe_stops_the_feed(monkeypatch, sample_profile):

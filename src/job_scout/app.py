@@ -9,9 +9,10 @@ conic-gauge fit score, matched-skill chips, and honest gaps — and (4) tailor a
 application for a selected job: cover letter + reworded CV, every claim checked
 against the resume, downloadable as PDF/.tex.
 
-When Jobvis is configured (see job_scout.voice), a voice strip sits above the
-wizard: a tap-to-talk session that narrates results and can trigger runs, whose
-finished work the 1s Timer pushes into the step pages.
+Jobvis, the voice concierge, is a separate surface now (job_scout.api serves it
+on :8000) — the wizard just links to it. What stays here is the sync: a run
+started by voice lands on these pages through the 1s Timer, and a click here
+whispers a screen event to whoever is listening on the console.
 """
 
 from __future__ import annotations
@@ -32,7 +33,6 @@ from job_scout.tools.cv_reader import CVReadError, extract_cv_text
 from job_scout.tracing import opik_url, register_prompts
 from job_scout.voice import bridge as voice_bridge
 from job_scout.voice import is_voice_available
-from job_scout.voice.announce import run_announcement
 
 CAPTION = "Prepares applications — never submits them."
 
@@ -276,86 +276,16 @@ footer { display: none !important; }
 .js-page { background: transparent !important; border: none !important; box-shadow: none !important; }
 .js-page > .styler, .js-page .form { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- Jobvis voice strip: a dark console over the paper --- */
-#jv-strip { background: linear-gradient(140deg, #1A241F 0%, #101713 100%) !important;
-  border: 1px solid rgba(14,156,104,0.28) !important; border-radius: 18px !important;
-  padding: 14px 18px !important; box-shadow: 0 14px 40px rgba(10, 20, 16, 0.28); }
-#jv-strip .styler, #jv-strip .form, #jv-strip .block { background: transparent !important; border: none !important;
-  box-shadow: none !important; }
-.jv-row { align-items: center !important; }
-#jv-strip button { background: rgba(14,156,104,0.14) !important; color: #7DE3B5 !important;
-  border: 1px solid rgba(14,156,104,0.45) !important; border-radius: 999px !important;
-  font-weight: 600; letter-spacing: 0.01em; transition: all .2s ease; white-space: nowrap; }
-#jv-strip button:hover { background: rgba(14,156,104,0.26) !important; border-color: rgba(125,227,181,0.7) !important; }
-#jv-strip .jv-status { display: flex; align-items: center; min-height: 34px;
-  font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; letter-spacing: 0.02em;
-  color: rgba(236,242,238,0.72); }
-.jv-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; margin-right: 10px;
-  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), rgba(120,130,125,0.6));
-  display: inline-block; }
-.jv-active .jv-dot { background: radial-gradient(circle at 35% 30%, #B9F5DB, var(--js-accent-bright));
-  animation: jv-pulse 1.6s ease infinite;
-  transform: scale(calc(1 + var(--jv-level, 0) * 1.1));
-  filter: brightness(calc(1 + var(--jv-level, 0) * 0.8));
-  transition: transform .45s ease, filter .45s ease; }
-.jv-lat { opacity: 0.55; margin-left: 8px; }
-.jv-error .jv-dot { background: radial-gradient(circle at 35% 30%, #FBD9A5, #B45309); }
-@keyframes jv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(14,156,104,0.45); }
-  50% { box-shadow: 0 0 0 9px rgba(14,156,104,0); } }
-#jv-strip .label-wrap span { color: rgba(236,242,238,0.6); font-size: 0.78rem;
-  font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; }
+/* --- Jobvis: a one-line pointer at the voice console on :8000 --- */
+#jv-strip { display: flex; align-items: center; justify-content: center; gap: 12px;
+  background: linear-gradient(140deg, #1A241F 0%, #101713 100%);
+  border: 1px solid rgba(14,156,104,0.28); border-radius: 18px;
+  padding: 12px 18px; margin: 2px 0 10px; box-shadow: 0 14px 40px rgba(10, 20, 16, 0.28); }
+#jv-strip .jv-hint { margin: 0; color: rgba(236,242,238,0.72); }
 .jv-hint { text-align: center; font-size: 0.78rem; color: var(--body-text-color-subdued); margin: 6px 0 0; }
 .jv-link { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: #7DE3B5 !important;
-  text-decoration: none; white-space: nowrap; align-self: center; }
+  text-decoration: none; white-space: nowrap; }
 .jv-link:hover { text-decoration: underline; }
-.jv-transcript { font-size: 0.82rem; line-height: 1.65; max-height: 230px; overflow-y: auto;
-  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
-  padding: 12px 14px; color: rgba(236,242,238,0.88); }
-.jv-transcript b { color: #B9F5DB; font-weight: 600; }
-.jv-transcript .jv-tool { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: #66D9A8;
-  opacity: 0.9; margin: 2px 0; }
-.jv-transcript .jv-system { color: rgba(236,242,238,0.45); font-style: italic; }
-
-/* --- Jarvis mode (/jarvis): full-dark voice console ------------------------ */
-#jx-backdrop { position: fixed; inset: 0; z-index: 1; pointer-events: none;
-  background: #0C110F; }
-#jx-backdrop::after { content: ""; position: absolute; inset: 0;
-  background: radial-gradient(55% 40% at 50% 18%, rgba(14,156,104,0.16), transparent 70%),
-              radial-gradient(70% 50% at 50% 100%, rgba(10,60,42,0.25), transparent 70%); }
-#jx-root { position: relative; z-index: 2; padding: 26px 0 40px; text-align: center; }
-#jx-root .jx-title { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 2rem;
-  color: #ECF2EE; letter-spacing: -0.02em; margin: 0 0 4px; }
-#jx-root .jx-sub { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; letter-spacing: 0.14em;
-  text-transform: uppercase; color: rgba(236,242,238,0.45); margin: 0 0 26px; }
-.jx-orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; margin: 6px 0 18px; }
-.jx-orb { width: 132px; height: 132px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, rgba(185,245,219,0.9), rgba(14,156,104,0.55) 46%, rgba(10,40,30,0.9) 78%);
-  box-shadow: 0 0 40px rgba(14,156,104,0.25), inset 0 0 30px rgba(0,0,0,0.35);
-  opacity: 0.45; transition: transform .45s ease, box-shadow .45s ease, opacity .45s ease; }
-.jx-live .jx-orb { opacity: 1;
-  transform: scale(calc(1 + var(--jv-level, 0) * 0.35));
-  box-shadow: 0 0 calc(44px + var(--jv-level, 0) * 90px) rgba(14,200,130, calc(0.30 + var(--jv-level, 0) * 0.45)),
-              inset 0 0 30px rgba(0,0,0,0.3);
-  animation: jx-breathe 3.2s ease-in-out infinite; }
-.jx-err .jx-orb { background: radial-gradient(circle at 38% 32%, #FBD9A5, #B45309 60%, #3a1e04); opacity: 0.9; }
-@keyframes jx-breathe { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
-.jx-orb-status { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; color: rgba(236,242,238,0.7); }
-#jx-root button { border-radius: 999px !important; }
-.jx-panel { background: rgba(255,255,255,0.045); border: 1px solid rgba(14,156,104,0.25);
-  border-radius: 16px; padding: 16px 20px; margin: 14px auto; max-width: 560px; text-align: left;
-  color: rgba(236,242,238,0.88); font-size: 0.92rem; line-height: 1.55; }
-.jx-panel-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.12em;
-  text-transform: uppercase; color: #66D9A8; margin: 0 0 10px; }
-.jx-row { display: flex; align-items: center; gap: 14px; padding: 8px 0;
-  border-top: 1px solid rgba(255,255,255,0.06); }
-.jx-row:first-of-type { border-top: none; }
-.jx-row .jx-rank { font-family: 'IBM Plex Mono', monospace; color: #66D9A8; font-size: 0.8rem; flex: none; }
-.jx-row .jx-job { flex: 1; }
-.jx-row .jx-job b { color: #ECF2EE; }
-.jx-row .jx-meta { font-size: 0.8rem; color: rgba(236,242,238,0.55); }
-.jx-score { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 1.05rem; color: #7DE3B5; flex: none; }
-.jx-empty { color: rgba(236,242,238,0.55); font-size: 0.9rem; }
-#jx-root .jv-transcript { max-width: 560px; margin: 0 auto; text-align: left; }
 
 /* accessibility: visible focus */
 a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
@@ -370,7 +300,6 @@ a:focus-visible, button:focus-visible, .js-job-title:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .js-job { animation: none; opacity: 1; transform: none; }
   .js-spin { animation: none; }
-  .jv-active .jv-dot { animation: none; }
 }
 """.replace("__GRAIN__", _GRAIN)
 
@@ -602,76 +531,22 @@ def _pack_downloads(result: TailorResult, profile: Profile | None) -> tuple[dict
     return pdf_btn, tex_btn, footer
 
 
-def _voice_status_html(status: str, message: str = "", hud: dict | None = None) -> str:
-    """Render the Jobvis status line: level-driven orb + optional latency readout."""
-    cls = {"active": "jv-active", "connecting": "jv-active", "error": "jv-error"}.get(status, "")
-    labels = {"idle": "Jobvis is off", "connecting": "connecting…", "active": "Jobvis is listening", "error": "voice error"}
-    label = message or labels.get(status, status)
-    level = float((hud or {}).get("level") or 0.0)
-    latency_ms = (hud or {}).get("latency_ms")
-    latency = f'<span class="jv-lat">· {int(latency_ms)} ms</span>' if latency_ms and status == "active" else ""
-    return (
-        f'<div class="jv-status {cls}"><span class="jv-dot" style="--jv-level:{level:.3f}"></span>{escape(label)}{latency}</div>'
-    )
-
-
 def _voice_context(text: str) -> None:
-    """Whisper a screen event to a live Jobvis session (silent; no-op when idle)."""
-    from job_scout.voice import get_voice_session  # lazy: the SDK loads only inside a running session
-
-    get_voice_session().share_context(text)
+    """Tell a listening console what just happened on screen (silent context)."""
+    voice_bridge.get_bridge().note_screen_event(text)
 
 
-def _transcript_html(lines: list[tuple[str, str]]) -> str:
-    """Render the conversation transcript, tool calls included — the grounding on display."""
-    if not lines:
-        return '<div class="jv-transcript"><span class="jv-system">Nothing yet — start a session and say hello.</span></div>'
-    rows = []
-    for role, text in lines[-60:]:
-        if role == "tool":
-            rows.append(f'<div class="jv-tool">⚙ {escape(text)}</div>')
-        elif role == "system":
-            rows.append(f'<div class="jv-system">{escape(text)}</div>')
-        else:
-            rows.append(f"<div><b>{'You' if role == 'you' else 'Jobvis'}:</b> {escape(text)}</div>")
-    return f'<div class="jv-transcript">{"".join(rows)}</div>'
+def on_run_tick():
+    """Mirror a voice-triggered run into the wizard's pages.
 
-
-def on_voice_toggle():
-    """Start or stop the Jobvis voice session. Outputs: (voice_btn, voice_status)."""
-    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
-
-    session = get_voice_session()
-    status, _, _ = session.snapshot()
-    if status in ("connecting", "active"):
-        session.stop()
-        return gr.update(value="Talk to Jobvis"), _voice_status_html("idle")
-    ok, message = session.start()
-    return (
-        gr.update(value="Stop Jobvis" if ok else "Talk to Jobvis"),
-        _voice_status_html("active" if ok else "error", message),
-    )
-
-
-def on_voice_tick():
-    """Poll the voice session; keep the wizard in sync with a voice-triggered run.
-
-    Most ticks are no-ops beyond the status/transcript refresh. While a run is
-    IN FLIGHT the tick mirrors the click path's loading view — the right step
-    page shows the runner's live status lines ("ranking 12 jobs…"), so the
-    screen never sits frozen while Jobvis works. When the bridge hands over the
-    finished run, the SAME renderers the click path uses fill the pages: a
-    search pops step 3, a tailoring pops step 4 with the PDF — even if the user
-    hung up the voice session during the wait.
+    The console holds the conversation, but the click path still owns these
+    screens, so a run started by voice has to land here too. While a run is IN
+    FLIGHT this shows the runner's live status lines ("ranking 12 jobs…") so
+    the page never sits frozen; when the bridge hands over the finished run,
+    the SAME renderers the click path uses fill it in. Announcing the result is
+    the console's job now — it hears the same run on its own feed.
     """
-    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
-
-    session = get_voice_session()
-    status, lines, error = session.snapshot()
-    status_html = _voice_status_html(status, error if status == "error" else "", session.hud())
-    transcript = _transcript_html(lines)
     no = gr.update()
-
     bridge = voice_bridge.get_bridge()
     run = bridge.pop_finished_run()
     if run is None:
@@ -679,23 +554,9 @@ def on_voice_tick():
         if progress.get("running"):
             loading = _loading_html(str(progress.get("latest_status") or "working…"))
             if progress.get("kind") == "search":
-                return (
-                    status_html,
-                    transcript,
-                    gr.update(visible=False),
-                    gr.update(visible=True),
-                    gr.update(visible=False),
-                    loading,
-                    "",
-                    no,
-                    no,
-                    no,
-                    no,
-                    no,
-                )
+                show_results = (gr.update(visible=False), gr.update(visible=True), gr.update(visible=False))
+                return (*show_results, loading, "", no, no, no, no, no)
             return (
-                status_html,
-                transcript,
                 gr.update(visible=False),
                 gr.update(visible=False),
                 gr.update(visible=True),
@@ -707,14 +568,10 @@ def on_voice_tick():
                 gr.update(visible=False),
                 gr.update(visible=False),
             )
-    if run is not None:
-        session.announce(run_announcement(run))  # the butler brings the news himself
     if run is not None and run.kind == "search" and run.search_result is not None and not run.failed:
         result = run.search_result
         choices = [(f"{r.job.title} — {r.job.company} (fit {r.fit_score})", r.job.job_id) for r in result.ranked_jobs]
         return (
-            status_html,
-            transcript,
             gr.update(visible=False),
             gr.update(visible=True),
             gr.update(visible=False),
@@ -728,10 +585,8 @@ def on_voice_tick():
         )
     if run is not None and run.kind == "tailor" and run.tailor_result is not None and not run.failed:
         result = run.tailor_result
-        pdf_btn, tex_btn, footer = _pack_downloads(result, voice_bridge.get_bridge().snapshot().profile)
+        pdf_btn, tex_btn, footer = _pack_downloads(result, bridge.snapshot().profile)
         return (
-            status_html,
-            transcript,
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=True),
@@ -743,169 +598,7 @@ def on_voice_tick():
             pdf_btn,
             tex_btn,
         )
-    return (status_html, transcript, no, no, no, no, no, no, no, no, no, no)
-
-
-def _ensure_jarvis_session() -> None:
-    """Standalone /jarvis visit: claim a wizard thread and seed the saved candidate.
-
-    The bridge is process-wide, so if the main page already registered a thread
-    this is a no-op — the Jarvis page simply views the same session. (Two tabs,
-    one bridge: last registered thread wins, as documented.)
-    """
-    bridge = voice_bridge.get_bridge()
-    if bridge.snapshot().thread_id:
-        return
-    thread_id = str(uuid4())
-    bridge.register_thread(thread_id)
-    stored = candidate_store.load_candidate()
-    if stored is not None:
-        bridge.record_profile(_apply_preferences(stored.profile, stored.preferences), stored.cv_text, thread_id)
-
-
-def _jarvis_orb_html(status: str, hud: dict | None, error: str = "") -> str:
-    """The big reactive orb + status line for the Jarvis page."""
-    level = float((hud or {}).get("level") or 0.0)
-    latency_ms = (hud or {}).get("latency_ms")
-    cls = {"active": "jx-live", "connecting": "jx-live", "error": "jx-err"}.get(status, "")
-    labels = {"idle": "standing by", "connecting": "coming online…", "active": "listening", "error": "fault"}
-    label = error or labels.get(status, status)
-    latency = f'<span class="jv-lat">· {int(latency_ms)} ms</span>' if latency_ms and status == "active" else ""
-    return (
-        f'<div class="jx-orb-wrap {cls}" style="--jv-level:{level:.3f}"><div class="jx-orb"></div>'
-        f'<div class="jx-orb-status">{escape(label)}{latency}</div></div>'
-    )
-
-
-def _jarvis_results_html(values: dict, snap, progress: dict) -> str:
-    """The live top-matches panel: progress, results, or what to do next."""
-    if progress.get("running"):
-        body = f'<span class="jx-empty">{escape(str(progress.get("latest_status") or "working…"))}</span>'
-        return f'<div class="jx-panel"><p class="jx-panel-title">Working</p>{body}</div>'
-    ranked = list(values.get("ranked_jobs") or [])
-    if ranked:
-        rows = "".join(
-            f'<div class="jx-row"><span class="jx-rank">{i:02d}</span>'
-            f'<span class="jx-job"><b>{escape(r.job.title)}</b><br>'
-            f'<span class="jx-meta">{escape(r.job.company)} · {escape(r.job.location)}</span></span>'
-            f'<span class="jx-score">{r.fit_score}</span></div>'
-            for i, r in enumerate(ranked[:3], 1)
-        )
-        return f'<div class="jx-panel"><p class="jx-panel-title">Top matches</p>{rows}</div>'
-    if snap.profile is not None:
-        return (
-            '<div class="jx-panel"><p class="jx-panel-title">Ready</p>'
-            f'<span class="jx-empty">Profile loaded for {escape(snap.profile.name or "the candidate")}. '
-            "Say: “Find me jobs.”</span></div>"
-        )
-    return (
-        '<div class="jx-panel"><p class="jx-panel-title">No candidate</p>'
-        '<span class="jx-empty">Drop a CV in the <a href="http://localhost:7860" style="color:#66D9A8">main app</a> once — '
-        "Jobvis remembers it from then on.</span></div>"
-    )
-
-
-_JARVIS_RENDER_CACHE: dict = {"key": None, "pdf": None, "tex": None}
-
-
-def _jarvis_pack_panel(values: dict, snap) -> tuple[str, dict, dict]:
-    """Application-ready panel + download buttons; the PDF renders once per pack."""
-    hidden = gr.update(visible=False)
-    pack = values.get("tailoring")
-    if pack is None:
-        return "", hidden, hidden
-    if _JARVIS_RENDER_CACHE["key"] != (key := hash(pack.cover_letter)):
-        name = (snap.profile.name if snap.profile else None) or "Candidate"
-        render = render_pdf(pack.cv, name, Path(tempfile.mkdtemp(prefix="job_scout_render_")))
-        _JARVIS_RENDER_CACHE.update(key=key, pdf=render.pdf_path, tex=render.tex_path)
-    flags = int(values.get("fabrication_flags") or 0)
-    verdict = (
-        "✓ Every claim checked against the CV — no flags."
-        if flags == 0
-        else f"⚠ {flags} statement{'s' if flags != 1 else ''} could not be verified — review before sending."
-    )
-    html = (
-        '<div class="jx-panel"><p class="jx-panel-title">Application ready</p>'
-        f"<b>{escape(pack.cv.headline)}</b><br><span class='jx-meta'>{escape(verdict)}</span></div>"
-    )
-    pdf = gr.update(value=str(_JARVIS_RENDER_CACHE["pdf"]), visible=True) if _JARVIS_RENDER_CACHE["pdf"] else hidden
-    tex = gr.update(value=str(_JARVIS_RENDER_CACHE["tex"]), visible=True) if _JARVIS_RENDER_CACHE["tex"] else hidden
-    return html, pdf, tex
-
-
-def on_jarvis_toggle():
-    """Engage/stand down the voice session from the Jarvis page."""
-    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
-
-    _ensure_jarvis_session()
-    session = get_voice_session()
-    status, _, _ = session.snapshot()
-    if status in ("connecting", "active"):
-        session.stop()
-        return gr.update(value="Engage Jobvis")
-    ok, _message = session.start()
-    return gr.update(value="Stand down" if ok else "Engage Jobvis")
-
-
-def on_jarvis_tick():
-    """The Jarvis page's 1s heartbeat: orb, feed, matches, pack — all from shared state.
-
-    Also pops/announces finished runs, so the page is self-sufficient when it is
-    the only tab open; panels read the checkpoint directly, so whichever tab
-    pops first, this view converges a tick later.
-    """
-    from job_scout.voice import get_voice_session  # lazy: needs the voice extra
-
-    _ensure_jarvis_session()
-    session = get_voice_session()
-    status, lines, error = session.snapshot()
-    bridge = voice_bridge.get_bridge()
-    run = bridge.pop_finished_run()
-    if run is not None:
-        session.announce(run_announcement(run))
-    snap = bridge.snapshot()
-    values = voice_bridge.checkpoint_values(snap.thread_id)
-    pack_html_str, pdf_btn, tex_btn = _jarvis_pack_panel(values, snap)
-    return (
-        _jarvis_orb_html(status, session.hud(), error if status == "error" else ""),
-        _transcript_html(lines),
-        _jarvis_results_html(values, snap, bridge.run_status()),
-        pack_html_str,
-        pdf_btn,
-        tex_btn,
-        gr.update(value="Stand down" if status in ("connecting", "active") else "Engage Jobvis"),
-    )
-
-
-def _build_jarvis_page(voice_ok: bool, voice_hint: str) -> list | None:
-    """The /jarvis page: a full-dark, fully voice-directed console.
-
-    Returns the tick-output component list (None when voice is unavailable) so
-    the caller can wire the priming load event.
-    """
-    gr.HTML('<div id="jx-backdrop"></div>')
-    with gr.Column(elem_id="jx-root"):
-        gr.HTML('<p class="jx-title">Jobvis</p><p class="jx-sub">voice-directed job scout</p>')
-        if not voice_ok:
-            gr.HTML(f'<p class="jv-hint">{escape(voice_hint)}</p>')
-            return None
-        jx_orb = gr.HTML(_jarvis_orb_html("idle", None))
-        jx_btn = gr.Button("Engage Jobvis", variant="primary", size="lg")
-        jx_results = gr.HTML("")
-        jx_pack = gr.HTML("")
-        with gr.Row():
-            jx_pdf = gr.DownloadButton("Download tailored CV (PDF)", visible=False, variant="primary")
-            jx_tex = gr.DownloadButton("Download .tex", visible=False, variant="secondary")
-        with gr.Accordion("Transcript", open=False):
-            jx_feed = gr.HTML(_transcript_html([]))
-
-    # Wiring at Blocks ROOT level: a Timer created inside a layout container can
-    # miss the client render tree, and its null instance kills the frontend at
-    # dispatch_load_events (observed on 6.20).
-    outputs = [jx_orb, jx_feed, jx_results, jx_pack, jx_pdf, jx_tex, jx_btn]
-    jx_btn.click(on_jarvis_toggle, outputs=[jx_btn])
-    gr.Timer(1.0).tick(on_jarvis_tick, outputs=outputs)
-    return outputs
+    return (no,) * 10
 
 
 REMOTE_CHOICE = "Remote (anywhere)"
@@ -914,19 +607,6 @@ REMOTE_CHOICE = "Remote (anywhere)"
 def _selection_to_prefs(selection: list[str]) -> dict:
     """The chooser's ticked boxes as a preferences dict."""
     return {"locations": [s for s in selection if s != REMOTE_CHOICE], "remote": REMOTE_CHOICE in selection}
-
-
-def _apply_preferences(profile: Profile, preferences: dict | None) -> Profile:
-    """The profile the SEARCH sees: extraction fields overridden by the human's choice.
-
-    The stored profile stays untouched — it is what the extractor measured and
-    what evaluation grades. Only the search runs on the chosen locations.
-    """
-    if not preferences:
-        return profile
-    return profile.model_copy(
-        update={"locations": list(preferences.get("locations") or []), "remote_ok": bool(preferences.get("remote"))}
-    )
 
 
 def _preference_selection(profile: Profile, preferences: dict | None) -> tuple[list[str], list[str]]:
@@ -945,7 +625,7 @@ def on_prefs_change(selection: list[str], profile: Profile | None, cv_text: str,
     if profile is None:
         return
     prefs = _selection_to_prefs(selection)
-    voice_bridge.get_bridge().record_profile(_apply_preferences(profile, prefs), cv_text, thread_id)
+    voice_bridge.get_bridge().record_profile(candidate_store.effective_profile(profile, prefs), cv_text, thread_id)
     candidate_store.save_candidate(profile, cv_text, prefs)
 
 
@@ -978,7 +658,7 @@ def _on_load(thread_id: str):
     if stored is None:
         return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
     choices, selected = _preference_selection(stored.profile, stored.preferences)
-    effective = _apply_preferences(stored.profile, stored.preferences)
+    effective = candidate_store.effective_profile(stored.profile, stored.preferences)
     voice_bridge.get_bridge().record_profile(effective, stored.cv_text, thread_id)
     note = (
         '<p class="js-muted" style="text-align:center;font-size:0.8rem;margin-top:10px">'
@@ -1046,7 +726,7 @@ def on_find(cv_text: str, profile: Profile | None, thread_id: str, loc_selection
         return
 
     prefs = _selection_to_prefs(loc_selection or [])
-    effective = _apply_preferences(profile, prefs)
+    effective = candidate_store.effective_profile(profile, prefs)
     voice_bridge.get_bridge().record_profile(effective, cv_text, thread_id)
     candidate_store.save_candidate(profile, cv_text, prefs)
 
@@ -1161,13 +841,10 @@ def build_app() -> gr.Blocks:
 
         voice_ok, voice_hint = is_voice_available()
         if voice_ok:
-            with gr.Group(elem_id="jv-strip"):
-                with gr.Row(elem_classes=["jv-row"]):
-                    voice_btn = gr.Button("Talk to Jobvis", variant="secondary", size="sm", scale=0)
-                    voice_status = gr.HTML(_voice_status_html("idle"))
-                    gr.HTML('<a class="jv-link" href="http://localhost:7861" target="_blank" rel="noopener">Jarvis mode ↗</a>')
-                with gr.Accordion("Transcript", open=False):
-                    voice_transcript = gr.HTML(_transcript_html([]))
+            gr.HTML(
+                '<div id="jv-strip"><span class="jv-hint">Jobvis, the voice concierge, runs in its own console.</span>'
+                '<a class="jv-link" href="http://localhost:8000" target="_blank" rel="noopener">Talk to Jobvis ↗</a></div>'
+            )
         else:
             gr.HTML(f'<p class="jv-hint">{escape(voice_hint)}</p>')
 
@@ -1287,12 +964,13 @@ def build_app() -> gr.Blocks:
         restart_btn2.click(reset, outputs=reset_outputs)
 
         if voice_ok:
-            voice_btn.click(on_voice_toggle, outputs=[voice_btn, voice_status])
+            # A run started by voice in the console still has to land on these
+            # pages. The Timer must sit at Blocks ROOT level: one created inside
+            # a layout container can miss the client render tree, and its null
+            # instance kills the frontend at dispatch_load_events (Gradio 6.20).
             gr.Timer(1.0).tick(
-                on_voice_tick,
+                on_run_tick,
                 outputs=[
-                    voice_status,
-                    voice_transcript,
                     page_profile,
                     page_results,
                     page_tailor,
@@ -1305,11 +983,9 @@ def build_app() -> gr.Blocks:
                     tex_btn,
                 ],
             )
-        # Restore on page load. A load event (not a Timer): on a MOUNTED app the
-        # client only opens its event connection on the first event, so a timer
-        # never fires unprimed — the /jarvis page hit the same bug. demo.load is
-        # safe on a standalone mounted app; it was only demo.route multipage
-        # that crashed on cross-page load events.
+        # Restore on page load. A load event, not a Timer: the client only opens
+        # its event connection on the first event, so an unprimed timer never
+        # fires.
         demo.load(
             _on_load,
             inputs=[thread_id],
@@ -1319,45 +995,9 @@ def build_app() -> gr.Blocks:
     return demo
 
 
-def build_jarvis_app() -> gr.Blocks:
-    """The /jarvis console as its OWN Gradio app.
-
-    Deliberately not a `demo.route` page: Gradio 6 multipage dispatches the
-    index page's (auto-generated) load events on every page, which crashes the
-    frontend when their outputs don't exist there. Two independent apps mounted
-    on one FastAPI server share nothing in the browser — and share everything
-    that matters (bridge, run manager, voice session, candidate store) in the
-    process.
-    """
-    voice_ok, voice_hint = is_voice_available()
-    with gr.Blocks(title="Jobvis", theme=THEME, css=CSS) as jarvis:
-        outputs = _build_jarvis_page(voice_ok, voice_hint)
-        if outputs is not None:
-            # Priming load: on a mounted app the client only opens its queue
-            # connection on the first event, so without this the 1s Timer never
-            # starts and the page sits frozen until a click. It also fills the
-            # panels immediately. (Safe here — the multipage load-event crash
-            # applied to demo.route pages, not standalone apps.)
-            jarvis.load(on_jarvis_tick, outputs=outputs)
-    return jarvis
-
-
-JARVIS_PORT = 7861
-
-
 def main() -> None:
-    """Serve the wizard on :7860 and the Jarvis console on :7861 — one process.
-
-    Two launch()es rather than gr.mount_gradio_app, and the ORDER matters —
-    both learned the hard way (Gradio 6.20): mounting two apps on one FastAPI
-    server left the root app's queue/data stream answering 503, and with two
-    launches the app launched LAST with the blocking call was the one whose
-    events never reached the browser. Wizard first (prevent_thread_lock),
-    Jarvis last: both verified healthy. The process-wide bridge shares all
-    state between the two regardless of ports.
-    """
-    build_app().launch(server_name="127.0.0.1", server_port=7860, theme=THEME, css=CSS, prevent_thread_lock=True)
-    build_jarvis_app().launch(server_name="127.0.0.1", server_port=JARVIS_PORT, theme=THEME, css=CSS)
+    """Serve the wizard on :7860. Jobvis lives at :8000 — `make jobvis`."""
+    build_app().launch(server_name="127.0.0.1", server_port=7860, theme=THEME, css=CSS)
 
 
 if __name__ == "__main__":

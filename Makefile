@@ -16,9 +16,17 @@ setup: ## Install deps and pre-commit hooks
 app: ## Launch the Gradio app
 	uv run python -m job_scout.app
 
-.PHONY: app-voice
-app-voice: ## Launch the app with the Jobvis voice extra (needs `brew install portaudio`)
-	uv run --extra voice python -m job_scout.app
+.PHONY: jobvis
+jobvis: ## Serve the Jobvis voice console + API on :8000 (build it first with `make web-build`)
+	uv run python -m job_scout.api
+
+.PHONY: web-build
+web-build: ## Build the Jobvis console into web/out (static export served by `make jobvis`)
+	cd web && npm ci && npm run build
+
+.PHONY: web-dev
+web-dev: ## Next dev server on :3000 against the API on :8000 (run `make jobvis` too)
+	cd web && npm run dev
 
 .PHONY: batch
 batch: ## Run the baseline batch (prompts for --yes cost confirmation)

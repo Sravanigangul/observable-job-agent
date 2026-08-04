@@ -17,6 +17,8 @@ os.environ["ADZUNA_APP_ID"] = ""
 os.environ["ADZUNA_APP_KEY"] = ""
 os.environ["JSEARCH_API_KEY"] = ""
 os.environ["TAVILY_API_KEY"] = ""
+os.environ["ELEVENLABS_API_KEY"] = ""
+os.environ["ELEVENLABS_AGENT_ID"] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 # Pin tunable knobs to their defaults so a developer's .env tuning
 # (e.g. SCOUT_MAX_REFORMULATIONS=0 or looser validator ratios) can't
@@ -120,23 +122,3 @@ def plain_llm(content: str) -> MagicMock:
     message.content = content
     llm.invoke.return_value = message
     return llm
-
-
-class FakeVoiceSession:
-    """Stand-in for voice.session.JobvisSession in UI-handler tests (no SDK, no audio)."""
-
-    def __init__(self, status: str = "idle", lines: tuple = (), level: float = 0.0, latency_ms: int | None = None):
-        self._status = status
-        self._lines = list(lines)
-        self._hud = {"level": level, "latency_ms": latency_ms}
-        self.announced: list[str] = []
-
-    def snapshot(self):
-        return self._status, list(self._lines), ""
-
-    def hud(self):
-        return dict(self._hud)
-
-    def announce(self, text: str) -> bool:
-        self.announced.append(text)
-        return True
