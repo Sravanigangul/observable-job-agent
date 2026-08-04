@@ -996,7 +996,19 @@ def build_app() -> gr.Blocks:
 
 
 def main() -> None:
-    """Serve the wizard on :7860. Jobvis lives at :8000 — `make jobvis`."""
+    """Serve both surfaces from ONE process: wizard on :7860, Jobvis on :8000.
+
+    One process is not a convenience here, it is a correctness requirement. The
+    voice bridge and the LangGraph ``MemorySaver`` are both process-wide, so
+    running the two servers separately gives you two sessions wearing the same
+    name: the wizard finds jobs the console cannot see, and Jobvis truthfully
+    reports an empty checkpoint. The API goes on a daemon thread first; Gradio
+    keeps the main thread, as it prefers to.
+    """
+    from job_scout.api import CONSOLE_PORT, serve_in_thread
+
+    serve_in_thread()
+    print(f"Jobvis console: http://localhost:{CONSOLE_PORT}")
     build_app().launch(server_name="127.0.0.1", server_port=7860, theme=THEME, css=CSS)
 
 

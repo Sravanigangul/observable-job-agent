@@ -172,7 +172,7 @@ the transcript panel).
 # The key needs the Agents Platform (Conversational AI) scopes enabled.
 make jobvis-agent        # create the agent, copy the printed id into .env
 make web-build           # build the console (Next.js static export)
-make jobvis              # console + API on http://localhost:8000
+make app                 # wizard on :7860 AND the console on :8000, one process
 ```
 
 The conversation runs in your **browser** over WebRTC, so you get real barge-in
@@ -255,8 +255,8 @@ observable-job-agent/
 ```bash
 make setup         # uv sync + pre-commit hooks
 make app           # launch the Gradio app
-make jobvis        # serve the Jobvis voice console + API on :8000
 make web-build     # build the console (Next.js static export into web/out)
+make jobvis-api    # API only, no wizard — for frontend work with make web-dev
 make batch         # baseline batch (prints projected cost; add --yes to run)
 make tailor-batch  # Phase 2 tailoring batch (search + tailor per case)
 make eval-datasets # push ranking + tailoring datasets to Opik from traces

@@ -13,11 +13,11 @@ setup: ## Install deps and pre-commit hooks
 	uv run pre-commit install
 
 .PHONY: app
-app: ## Launch the Gradio app
+app: ## Launch both surfaces: the wizard on :7860 and the Jobvis console on :8000
 	uv run python -m job_scout.app
 
-.PHONY: jobvis
-jobvis: ## Serve the Jobvis voice console + API on :8000 (build it first with `make web-build`)
+.PHONY: jobvis-api
+jobvis-api: ## API only, no wizard — for frontend work with `make web-dev` (empty session)
 	uv run python -m job_scout.api
 
 .PHONY: web-build

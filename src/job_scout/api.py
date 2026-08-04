@@ -179,6 +179,7 @@ async def event_stream(disconnected: Callable[[], Awaitable[bool]], poll: float 
     idle = 0
     try:
         while not await disconnected():
+            forced = False
             try:
                 event = feed.get_nowait()
             except queue.Empty:
@@ -188,8 +189,14 @@ async def event_stream(disconnected: Callable[[], Awaitable[bool]], poll: float 
                     yield _sse("run_finished", {"kind": event.run.kind, "text": run_announcement(event.run)})
                 elif event.kind == "screen":
                     yield _sse("context", {"text": event.text})
+                # Any event means the checkpoint may have moved. Run status alone
+                # is not enough to notice: a search started by CLICKING in the
+                # wizard never touches the run manager, so without this the
+                # console would sit on "say find me jobs" while the wizard is
+                # already showing ranked results.
+                forced = True
             snapshot = json.dumps(bridge.run_status(), sort_keys=True)
-            if snapshot != last_run:
+            if forced or snapshot != last_run:
                 last_run = snapshot
                 yield _sse("state", current_state())
                 idle = 0
@@ -289,10 +296,35 @@ def create_app() -> FastAPI:
     return app
 
 
-def main() -> None:
+CONSOLE_PORT = 8000
+
+
+def serve_in_thread(port: int = CONSOLE_PORT) -> None:
+    """Run the console's API on a daemon thread, for callers that own the main one.
+
+    The wizard and the console MUST live in one process: the bridge and the
+    LangGraph ``MemorySaver`` are both process-wide, so two processes would mean
+    two sessions wearing the same name — the wizard would find jobs the console
+    could not see. `job_scout.app` starts this before it launches Gradio.
+    """
+    import threading
+
     import uvicorn
 
-    uvicorn.run(create_app(), host="127.0.0.1", port=8000)
+    server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning"))
+    threading.Thread(target=server.run, daemon=True, name="jobvis-api").start()
+
+
+def main() -> None:
+    """API only, on the main thread — for frontend work with `make web-dev`.
+
+    Note that a console served this way sees an EMPTY session: the wizard is not
+    running, so nothing has claimed a thread or extracted a profile. Use
+    `make app` for the real thing.
+    """
+    import uvicorn
+
+    uvicorn.run(create_app(), host="127.0.0.1", port=CONSOLE_PORT)
 
 
 if __name__ == "__main__":

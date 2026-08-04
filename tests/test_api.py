@@ -170,6 +170,49 @@ def test_state_claims_a_thread_and_seeds_the_stored_candidate(client, bridge, sa
     assert bridge.snapshot().profile.locations == ["Munich"]
 
 
+def test_console_sees_a_search_the_wizard_ran(client, bridge, monkeypatch, sample_profile):
+    """Two surfaces, ONE session — the whole premise, pinned.
+
+    The wizard's click path never touches the bridge's run manager, so it is
+    easy for the console to sit on "say find me jobs" while the wizard is
+    already showing results. It reads the same checkpoint or it is lying.
+    """
+    import job_scout.app as app_module
+
+    bridge.register_thread("t1")
+    jobs = [RankedJob(job=make_job("j1", "Data Scientist", "Acme"), fit_score=91, fit_explanation="fits")]
+    monkeypatch.setattr(bridge_module, "checkpoint_values", lambda thread_id: {"ranked_jobs": jobs})
+    bridge.record_profile(sample_profile, "cv text", "t1")
+    bridge.record_step("results")
+    app_module._voice_context("Screen event: an on-screen job search just finished.")
+
+    body = client.get("/api/state").json()
+    assert body["thread_id"] == "t1"  # the wizard's thread, not one of our own
+    assert body["step"] == "results"
+    assert body["jobs"][0]["title"] == "Data Scientist"
+
+
+def test_event_stream_repaints_after_a_click_path_run(bridge, monkeypatch, sample_profile):
+    """A screen event forces a state frame; run status alone would never change."""
+    bridge.register_thread("t1")
+    bridge.record_profile(sample_profile, "cv text", "t1")
+
+    async def go() -> list[str]:
+        gen = api_module.event_stream(_never_disconnected, poll=0.01)
+        frames = [await gen.__anext__()]  # the initial state frame
+        bridge.note_screen_event("Screen event: an on-screen job search just finished.")
+        for _ in range(400):
+            frames.append(await gen.__anext__())
+            if frames[-1].startswith("event: state") and len(frames) > 2:
+                break
+        await gen.aclose()
+        return frames
+
+    frames = asyncio.run(go())
+    assert any(f.startswith("event: context") for f in frames)
+    assert sum(f.startswith("event: state") for f in frames) >= 2  # repainted, not just announced
+
+
 def test_pack_downloads_404_before_tailoring(client):
     assert client.get("/api/pack/pdf").status_code == 404
     assert client.get("/api/pack/tex").status_code == 404

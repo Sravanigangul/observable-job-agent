@@ -37,6 +37,14 @@ Why this shape: the ElevenLabs key never leaves the Python process — the brows
 asks `/api/voice/token` for a short-lived conversation token, and that is the
 only credential it ever holds.
 
+**Both servers run in one process** (`make app` starts the API on a daemon
+thread, then hands the main thread to Gradio). That is a correctness
+requirement, not a convenience: the bridge and the LangGraph `MemorySaver` are
+both process-wide, so two processes would mean two sessions wearing the same
+name — the wizard would find jobs the console could not see, and Jobvis would
+truthfully report an empty checkpoint. `make jobvis-api` runs the API alone for
+frontend work, and its session is empty by design.
+
 | Where | Job | Talks to ElevenLabs? |
 |-------|-----|----------------------|
 | `voice/bridge.py` | Thread-safe registry of the active wizard session (thread_id, profile, CV text), run manager, and the per-consumer event feed | no |
@@ -156,7 +164,7 @@ out of scope here.)
 4. **Build and serve the console**:
    ```bash
    make web-build      # npm ci && next build → web/out
-   make jobvis         # FastAPI serves the console + the API on :8000
+   make app            # wizard on :7860 AND the console on :8000
    ```
 5. **Optional — hand control**:
    ```bash
@@ -195,9 +203,9 @@ the same prompt without spending conversation minutes.
 | Symptom | Cause / fix |
 |---------|-------------|
 | Console says "Jobvis is off — …" | The hint names the missing piece: API key or agent id. |
-| The page loads but says the API is unreachable | `make jobvis` is not running, or you opened :3000 (dev) without it. |
+| The page loads but says the API is unreachable | `make app` is not running, or you opened :3000 (dev) without it. |
 | `/api/voice/token` returns 502 with a 401 inside | The API key lacks Agents-platform scopes. Dashboard → Developers → API Keys → your key → enable Agents Platform (Conversational AI) read + write, or use an unrestricted key. |
-| `make jobvis` logs "no built console" | Run `make web-build` first; the API works without it, but there is no page to open. |
+| The log says "no built console" | Run `make web-build` first; the API works without it, but there is no page to open. |
 | Session starts, hears nothing | Browser mic permission — the padlock in the address bar. |
 | Session drops mid-conversation | Likely free-tier minutes exhausted — check the ElevenLabs dashboard usage page. Minutes are a separate pool from TTS characters. |
 | Jobvis says there are no results but the page shows some | The app was restarted: the in-process `MemorySaver` is empty, and Jobvis answers from the checkpoint — truthfully. Re-run the search. |

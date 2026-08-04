@@ -130,8 +130,10 @@ flowchart TB
    itself runs in the browser over WebRTC — which buys real barge-in and the
    browser's own echo cancellation. Nothing the agent may *know* went with it:
    client tools POST to `/api/tools/{name}` and resolve in `voice/tools.py`
-   against the same checkpoint. `voice/bridge.py` gives each surface its own
-   event feed, so a finished run reaches both instead of racing them.
+   against the same checkpoint. Both servers live in **one process** (the bridge
+   and the `MemorySaver` are process-wide, so splitting them would give you two
+   sessions wearing one name), and `voice/bridge.py` gives each surface its own
+   event feed so a finished run reaches both instead of racing them.
    See [`jobvis.md`](jobvis.md).
 7. **Cross-cutting (dotted).** Every node's LLM call goes through `llm.py`
    (provider-agnostic + a per-run call budget; the budget is per-THREAD now that
