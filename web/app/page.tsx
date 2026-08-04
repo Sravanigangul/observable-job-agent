@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import JobvisOrb from "@/components/JobvisOrb";
 import { JobsPanel, PackPanel, RunPanel, TranscriptPanel } from "@/components/Panels";
-import { eventsUrl, getConfig, getConversationToken, getState, type Config, type State } from "@/lib/api";
+import { eventsUrl, getConfig, getSessionStart, getState, type Config, type State } from "@/lib/api";
 import type { OrbMode } from "@/lib/orbScene";
 import { buildClientTools } from "@/lib/tools";
 
@@ -121,8 +121,12 @@ function Console() {
     setEngaging(true);
     setError("");
     try {
-      const conversationToken = await getConversationToken();
-      conversation.startSession({ conversationToken, connectionType: "webrtc" });
+      const { token, dynamicVariables } = await getSessionStart();
+      conversation.startSession({
+        conversationToken: token,
+        connectionType: "webrtc",
+        dynamicVariables,
+      });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {

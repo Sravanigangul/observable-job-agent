@@ -23,6 +23,7 @@ import os
 import queue
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -40,6 +41,7 @@ from job_scout.renderer import render_pdf
 from job_scout.voice import bridge as voice_bridge
 from job_scout.voice import is_voice_available
 from job_scout.voice.announce import run_announcement
+from job_scout.voice.persona import greeting_variables
 from job_scout.voice.tools import CLIENT_TOOL_HANDLERS
 
 TOKEN_URL = "https://api.elevenlabs.io/v1/convai/conversation/token"  # noqa: S105 - an endpoint, not a credential
@@ -254,7 +256,16 @@ def create_app() -> FastAPI:
         token = response.json().get("token")
         if not token:
             raise HTTPException(status_code=502, detail="ElevenLabs returned no token")
-        return {"token": token}
+        # The greeting is a template (persona.FIRST_MESSAGE). Unfilled, the agent
+        # opens the conversation by reading "{{part_of_day}}" out loud, so these
+        # ride along with the token rather than being the console's to invent.
+        # ensure_session() first: on a cold visit the stored candidate has not
+        # been seeded yet, and "Good morning." is a sadder greeting than
+        # "Good morning, Shirin."
+        ensure_session()
+        snap = voice_bridge.get_bridge().snapshot()
+        name = snap.profile.name if snap.profile else None
+        return {"token": token, "dynamic_variables": greeting_variables(name, datetime.now().hour)}
 
     @app.post("/api/tools/{name}")
     def call_tool(name: str, parameters: Annotated[dict | None, Body()] = None) -> dict:

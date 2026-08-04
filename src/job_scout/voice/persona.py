@@ -11,10 +11,24 @@ from __future__ import annotations
 
 AGENT_NAME = "Jobvis"
 
-# Dynamic-variable template: session.py fills {{part_of_day}} ("morning"…) and
+# Dynamic-variable template: the console fills {{part_of_day}} ("morning"…) and
 # {{user_name_suffix}} (", Shantanu" from the persisted profile, or "") per
 # session — dynamic variables need NO override-security toggles on the agent.
+# They are NOT optional: unfilled, the agent greets you with the literal braces.
 FIRST_MESSAGE = "Good {{part_of_day}}{{user_name_suffix}}. Jobvis at your service — shall we see what the market offers today?"
+
+
+def greeting_variables(name: str | None, hour: int) -> dict[str, str]:
+    """Fill FIRST_MESSAGE's placeholders for one session."""
+    if 5 <= hour < 12:
+        part_of_day = "morning"
+    elif 12 <= hour < 18:
+        part_of_day = "afternoon"
+    else:
+        part_of_day = "evening"
+    first_name = (name or "").split()[0] if name else ""
+    return {"part_of_day": part_of_day, "user_name_suffix": f", {first_name}" if first_name else ""}
+
 
 # Deep, composed stock voices; the closest thing to a butler off the shelf.
 # Overridable with ELEVENLABS_VOICE_ID in .env.

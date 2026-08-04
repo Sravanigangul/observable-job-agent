@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+from pathlib import Path
 
 import httpx
 import pytest
@@ -15,9 +17,11 @@ from fastapi.testclient import TestClient
 
 import job_scout.api as api_module
 import job_scout.voice.bridge as bridge_module
+import job_scout.voice.persona as persona
 from job_scout.graph.schemas import CVContent, RankedJob, TailoringPack
 from job_scout.runner import RunResult
 from job_scout.voice.bridge import VoiceBridge
+from job_scout.voice.tools import CLIENT_TOOL_HANDLERS
 from tests.conftest import make_job
 
 
@@ -69,10 +73,59 @@ def test_token_is_minted_server_side(client, monkeypatch, respx_mock):
 
     body = client.post("/api/voice/token").json()
 
-    assert body == {"token": "conv-token-abc"}
+    assert body["token"] == "conv-token-abc"
     sent = route.calls.last.request
     assert sent.headers["xi-api-key"] == "xi-test-key"
     assert sent.url.params["agent_id"] == "agent-123"
+
+
+def test_token_carries_the_greeting_variables(client, bridge, monkeypatch, respx_mock, sample_profile):
+    """FIRST_MESSAGE is a template. Unfilled, Jobvis says "{{part_of_day}}" out loud."""
+    bridge.register_thread("t1")
+    bridge.record_profile(sample_profile, "cv text", "t1")
+    voice_on(monkeypatch)
+    respx_mock.get(api_module.TOKEN_URL).mock(return_value=httpx.Response(200, json={"token": "conv-token-abc"}))
+
+    body = client.post("/api/voice/token").json()
+
+    variables = body["dynamic_variables"]
+    assert variables["user_name_suffix"] == ", Test"  # first name only, from the stored profile
+    assert variables["part_of_day"] in {"morning", "afternoon", "evening"}
+    for placeholder in re.findall(r"\{\{(\w+)\}\}", persona.FIRST_MESSAGE):
+        assert placeholder in variables, f"greeting placeholder {placeholder} has nothing to fill it"
+
+
+def test_token_seeds_the_session_so_a_cold_visit_still_knows_your_name(client, monkeypatch, respx_mock, sample_profile):
+    """Engaging before anything else loaded must not cost you the personal greeting."""
+    import job_scout.candidate_store as candidate_store
+
+    candidate_store.save_candidate(sample_profile, "cv text", None)
+    voice_on(monkeypatch)
+    respx_mock.get(api_module.TOKEN_URL).mock(return_value=httpx.Response(200, json={"token": "t"}))
+
+    body = client.post("/api/voice/token").json()
+    assert body["dynamic_variables"]["user_name_suffix"] == ", Test"
+
+
+def test_greeting_variables_cover_the_day_and_a_missing_name():
+    assert persona.greeting_variables("Shirin Khosravi Jam", 9) == {"part_of_day": "morning", "user_name_suffix": ", Shirin"}
+    assert persona.greeting_variables(None, 14)["part_of_day"] == "afternoon"
+    assert persona.greeting_variables("", 21) == {"part_of_day": "evening", "user_name_suffix": ""}
+
+
+def test_the_console_registers_exactly_the_tools_the_agent_declares():
+    """persona → Python handlers → TypeScript. Three lists, hand-kept, one truth.
+
+    The TS names are hardcoded (the console cannot import Python), so drift here
+    means the agent calls a tool nothing answers — silently, mid-demo.
+    """
+    web_tools = Path(__file__).resolve().parent.parent / "web" / "lib" / "tools.ts"
+    declared = re.search(r"TOOL_NAMES = \[(.*?)\]", web_tools.read_text(), re.S)
+    assert declared is not None, "TOOL_NAMES not found in web/lib/tools.ts"
+    typescript = sorted(re.findall(r'"(\w+)"', declared.group(1)))
+
+    assert sorted(spec["name"] for spec in persona.TOOL_SPECS) == typescript
+    assert sorted(CLIENT_TOOL_HANDLERS) == typescript
 
 
 def test_token_upstream_failure_is_reported_not_swallowed(client, monkeypatch, respx_mock):

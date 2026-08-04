@@ -68,12 +68,18 @@ async function getJson<T>(path: string): Promise<T> {
 export const getConfig = () => getJson<Config>("/api/config");
 export const getState = () => getJson<State>("/api/state");
 
+export type SessionStart = {
+  token: string;
+  /** Fills persona.FIRST_MESSAGE — unset, the agent greets you with literal braces. */
+  dynamicVariables: Record<string, string>;
+};
+
 /** Mint a conversation token. The ElevenLabs key never reaches the browser. */
-export async function getConversationToken(): Promise<string> {
+export async function getSessionStart(): Promise<SessionStart> {
   const response = await fetch(`${BASE}/api/voice/token`, { method: "POST" });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.detail ?? `token request failed: ${response.status}`);
-  return body.token as string;
+  return { token: body.token as string, dynamicVariables: body.dynamic_variables ?? {} };
 }
 
 /**
