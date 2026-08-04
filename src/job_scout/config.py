@@ -48,7 +48,6 @@ class Settings(BaseSettings):
     elevenlabs_api_key: SecretStr = Field(default=SecretStr(""), alias="ELEVENLABS_API_KEY")
     elevenlabs_agent_id: str = Field(default="", alias="ELEVENLABS_AGENT_ID")
     elevenlabs_voice_id: str = Field(default="", alias="ELEVENLABS_VOICE_ID")
-    jobvis_echo_gate: bool = Field(default=True, alias="JOBVIS_ECHO_GATE")
 
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
     scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")

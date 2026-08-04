@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/LangGraph-1.1+-ff6f00.svg" alt="LangGraph">
   <img src="https://img.shields.io/badge/Opik-observability-6f42c1.svg" alt="Opik">
   <img src="https://img.shields.io/badge/Gradio-5+-f97316.svg" alt="Gradio">
-  <img src="https://img.shields.io/badge/tests-190%20passing-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-217%20passing-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 
@@ -118,12 +118,14 @@ Free models correctly show $0.00 cost in Opik.
 
 - [`notebooks/phase2_evaluation.ipynb`](notebooks/phase2_evaluation.ipynb) — Part 2: the tailoring walkthrough, the stale-checkpoint bug live, datasets and eval suites (cost printed before every spend)
 - [`notebooks/phase1_walkthrough.ipynb`](notebooks/phase1_walkthrough.ipynb) — Part 1: the search agent end to end, reading your first trace
+- [`notebooks/phase3_ollie.ipynb`](notebooks/phase3_ollie.ipynb) — Part 3: per-source spans, the fan-out measured both ways, and the questions to ask Ollie
 
 ### 📊 Access Points
 
 | Service | URL | Purpose |
 |---------|-----|---------|
 | **Gradio UI** | http://localhost:7860 | Upload a CV, review the profile, find ranked jobs |
+| **Jobvis console** | http://localhost:8000 | The voice concierge: holographic orb, live matches, PDF downloads |
 | **Opik dashboard** | your Comet project | Span tree, agent graph, per-run cost, prompt library |
 
 ---
@@ -166,15 +168,17 @@ the Phase 2 grounding contract, applied to voice (watch the tool calls appear in
 the transcript panel).
 
 ```bash
-brew install portaudio   # system audio dep (pyaudio builds against it)
 # put ELEVENLABS_API_KEY in .env — free tier: 15 conversation min/month.
 # The key needs the Agents Platform (Conversational AI) scopes enabled.
 make jobvis-agent        # create the agent, copy the printed id into .env
-make app-voice           # `make app` + the voice extra — the Jobvis strip appears
+make web-build           # build the console (Next.js static export)
+make jobvis              # console + API on http://localhost:8000
 ```
 
-(Plain `make app` re-syncs the venv *without* the extra — uv strips it — so use
-`make app-voice` whenever you want the voice strip.)
+The conversation runs in your **browser** over WebRTC, so you get real barge-in
+and the browser's own echo cancellation — and there is no audio library to
+build. Your key never leaves the Python process: the page asks for a
+short-lived session token and nothing more.
 
 Job Scout **remembers your resume between runs** — and **where you want to
 work**: the extracted profile and your chosen search locations (the step-2
@@ -184,15 +188,16 @@ and Jobvis knows you immediately — "Start over" is what forgets it.
 Jobs are deliberately *not* persisted (postings go stale): each session
 fetches fresh, one spoken "find me jobs" away.
 
-Two surfaces, one session: the wizard at `/` for the manual click-flow, and
-**Jarvis mode** at http://localhost:7861 — a full-dark voice console (breathing orb, live
-top-matches, application panel with PDF downloads) where everything after the
-CV upload happens by voice, with Jobvis leading each step.
+Two surfaces, one session: the wizard on :7860 for the manual click-flow, and
+the **voice console** on :8000 — a full-dark page whose holographic orb breathes
+with Jobvis's actual voice, with live top-matches, the application panel and its
+PDF downloads. Everything after the CV upload can happen by voice. Optional
+**hand control** (pinch to spin the orb, MediaPipe in the browser) is off behind
+a flag; see [`docs/jobvis.md`](docs/jobvis.md).
 
-Worth knowing: macOS asks for **microphone permission on your terminal app**
-(not the browser); one voice-triggered run at a time (don't click the wizard's
-own buttons mid-run); you can stop the voice session during a long run — the
-result still pops. Full chapter, demo script, and troubleshooting:
+Worth knowing: one voice-triggered run at a time (don't click the wizard's own
+buttons mid-run); you can hang up during a long run — the result still lands on
+both surfaces. Full chapter, demo script and troubleshooting:
 [`docs/jobvis.md`](docs/jobvis.md).
 
 ---
@@ -229,18 +234,20 @@ observable-job-agent/
 │   ├── llm.py          # chat-model factory + per-run call budget
 │   ├── tracing.py      # all Opik wiring in one module
 │   ├── evals/          # metrics.py: ProfileFieldAccuracy, FabricationRate, FitExplanationQuality
-│   ├── voice/          # Jobvis: bridge.py, tools.py, persona.py, session.py (ElevenLabs Agents)
+│   ├── voice/          # Jobvis: bridge.py, tools.py, persona.py, announce.py (no SDK, no audio)
+│   ├── api.py          # FastAPI: session tokens, tool dispatch, state, SSE, serves the console
 │   ├── graph/          # graph.py (entry router + search + tailor), state.py, schemas.py, nodes/, prompts/
 │   ├── templates/      # cv.tex.j2 — the single ATS-friendly CV template
 │   └── tools/          # jobs_api.py (JSearch/Adzuna/Remotive/cache), cv_reader.py, research.py (Tavily)
-├── notebooks/          # phase1_walkthrough.ipynb, phase2_evaluation.ipynb (guided tours)
+├── web/                # the Jobvis voice console (Next.js + Three.js, WebRTC)
+├── notebooks/          # phase1_walkthrough.ipynb, phase2_evaluation.ipynb, phase3_ollie.ipynb
 ├── scripts/            # run_batch.py, run_tailor_batch.py, build_*_dataset.py, run_evals.py,
 │                       # setup_annotation_queue.py, snapshot_jobs.py, generate_fixture_*.py
 ├── data/               # cached_jobs.json, fixture_cvs/, fixture_linkedin/, labels/ (hand labels)
 ├── docs/               # architecture.md, opik_setup.md, extending_sources.md, jobvis.md,
-│                       # optimizing_latency.md, baseline.json, tailor_batch.json,
+│                       # ollie.md, optimizing_latency.md, baseline.json, tailor_batch.json,
 │                       # phase*_findings.md, phase2_eval_report.md
-└── tests/              # 190 tests (LLM mocked, network mocked, Opik off)
+└── tests/              # 217 tests (LLM mocked, network mocked, Opik off)
 ```
 
 ### 🔧 Essential Commands
@@ -248,7 +255,8 @@ observable-job-agent/
 ```bash
 make setup         # uv sync + pre-commit hooks
 make app           # launch the Gradio app
-make app-voice     # launch with the Jobvis voice extra
+make jobvis        # serve the Jobvis voice console + API on :8000
+make web-build     # build the console (Next.js static export into web/out)
 make batch         # baseline batch (prints projected cost; add --yes to run)
 make tailor-batch  # Phase 2 tailoring batch (search + tailor per case)
 make eval-datasets # push ranking + tailoring datasets to Opik from traces
@@ -257,6 +265,7 @@ make queue         # create the Opik annotation queue + feedback definitions
 make snapshot      # rebuild data/cached_jobs.json from live sources
 make fixtures      # regenerate the synthetic fixture CVs + LinkedIn export ZIPs
 make jobvis-agent  # create/update the Jobvis ElevenLabs agent (prints the agent id)
+make gates         # deterministic eval regression gate (zero LLM calls)
 make test          # run the test suite
 make lint          # ruff check
 make format        # ruff format + fix
