@@ -1,38 +1,65 @@
 "use client";
 
 /**
- * The panels below the orb. Every value here came from the LangGraph
+ * The contents of the glass slab. Every value here came from the LangGraph
  * checkpoint via /api/state — the console renders facts, it never derives them.
+ *
+ * The exception, and the point of the panel: `nextStep` derives nothing about
+ * the WORLD, only about what the person should do next. That is a UI concern,
+ * so it lives in the UI.
  */
 
 import { packUrl, type State } from "@/lib/api";
+import type { OrbMode } from "@/lib/orbScene";
 
-export function RunPanel({ state }: { state: State }) {
+export type Step = { now: string; next: string; cue?: string };
+
+/** What is happening, and what to say next. The slab's headline. */
+export function nextStep(state: State, mode: OrbMode): Step {
   if (state.run.running) {
-    return (
-      <section className="panel">
-        <p className="panel-title">Working</p>
-        <p className="muted">{state.run.latest_status || "working…"}</p>
-      </section>
-    );
+    return {
+      now: state.run.latest_status || "Working…",
+      next: "This takes about a minute. Jobvis will speak up when it lands.",
+    };
   }
-  if (state.jobs.length > 0) return null;
-  if (state.candidate) {
-    return (
-      <section className="panel">
-        <p className="panel-title">Ready</p>
-        <p className="muted">
-          Profile loaded for {state.candidate.name || "the candidate"}. Say: <b>&ldquo;Find me jobs.&rdquo;</b>
-        </p>
-      </section>
-    );
+  if (!state.candidate) {
+    return {
+      now: "No candidate yet",
+      next: "Drop a CV in the wizard once — Jobvis remembers it from then on.",
+    };
   }
+  if (mode === "idle") {
+    return {
+      // No cue here on purpose: `cue` is a phrase to SAY, and there is nothing
+      // to say to an agent that is not listening yet.
+      now: `Ready for ${state.candidate.name || "you"}`,
+      next: "Engage Jobvis, top right, to start talking.",
+    };
+  }
+  if (state.pack) {
+    return {
+      now: "Application ready",
+      next: "Ask for the highlights, or take the downloads below.",
+      cue: "give me the highlights",
+    };
+  }
+  if (state.jobs.length > 0) {
+    return {
+      now: `${state.jobs.length} matches ranked`,
+      next: "Ask to run through them, or to tailor one.",
+      cue: "tailor an application for the first one",
+    };
+  }
+  return { now: "Listening", next: "Ask for jobs whenever you are ready.", cue: "find me jobs" };
+}
+
+export function NextPanel({ step }: { step: Step }) {
   return (
-    <section className="panel">
-      <p className="panel-title">No candidate</p>
-      <p className="muted">
-        Drop a CV in the <a href="http://localhost:7860">wizard</a> once — Jobvis remembers it from then on.
-      </p>
+    <section className="block now">
+      <p className="label">Now</p>
+      <p className="now-line">{step.now}</p>
+      <p className="next-line">{step.next}</p>
+      {step.cue && <p className="cue">&ldquo;{step.cue}&rdquo;</p>}
     </section>
   );
 }
@@ -40,14 +67,13 @@ export function RunPanel({ state }: { state: State }) {
 export function JobsPanel({ state }: { state: State }) {
   if (state.jobs.length === 0) return null;
   return (
-    <section className="panel">
-      <p className="panel-title">Top matches</p>
-      {state.jobs.slice(0, 3).map((job) => (
-        <div className="row" key={job.job_id}>
+    <section className="block">
+      <p className="label">Top matches</p>
+      {state.jobs.slice(0, 3).map((job, i) => (
+        <div className="row" key={job.job_id} style={{ animationDelay: `${i * 70}ms` }}>
           <span className="rank">{String(job.rank).padStart(2, "0")}</span>
           <span className="job">
             <b>{job.title}</b>
-            <br />
             <span className="meta">
               {job.company} · {job.location}
             </span>
@@ -63,32 +89,31 @@ export function PackPanel({ state }: { state: State }) {
   const pack = state.pack;
   if (!pack) return null;
   return (
-    <section className="panel">
-      <p className="panel-title">Application ready</p>
-      <b>{pack.headline}</b>
+    <section className="block">
+      <p className="label">Application</p>
+      <b className="headline">{pack.headline}</b>
       <p className={pack.flags === 0 ? "verdict clean" : "verdict flagged"}>
         {pack.flags === 0 ? "✓" : "⚠"} {pack.verdict}
       </p>
-      <div className="downloads">
-        <a className="button" href={packUrl("pdf")} download>
-          Download tailored CV (PDF)
+      <div className="downloads no-drag">
+        <a className="pill solid" href={packUrl("pdf")} download>
+          Tailored CV · PDF
         </a>
-        <a className="button ghost" href={packUrl("tex")} download>
-          Download .tex
+        <a className="pill" href={packUrl("tex")} download>
+          .tex
         </a>
       </div>
     </section>
   );
 }
 
-export function TranscriptPanel({ lines }: { lines: { role: string; text: string }[] }) {
+export function ActivityPanel({ lines }: { lines: { role: string; text: string }[] }) {
+  if (lines.length === 0) return null;
   return (
-    <details className="panel transcript">
-      <summary className="panel-title">Transcript</summary>
-      {lines.length === 0 ? (
-        <p className="muted">Nothing yet — engage Jobvis and say hello.</p>
-      ) : (
-        lines.slice(-60).map((line, index) => (
+    <section className="block activity no-drag">
+      <p className="label">Activity</p>
+      <div className="feed">
+        {lines.slice(-40).map((line, index) => (
           <div key={index} className={`line ${line.role}`}>
             {line.role === "tool" ? (
               <span className="tool">⚙ {line.text}</span>
@@ -96,12 +121,13 @@ export function TranscriptPanel({ lines }: { lines: { role: string; text: string
               <span className="system">{line.text}</span>
             ) : (
               <>
-                <b>{line.role === "you" ? "You" : "Jobvis"}:</b> {line.text}
+                <span className="who">{line.role === "you" ? "You" : "Jobvis"}</span>
+                {line.text}
               </>
             )}
           </div>
-        ))
-      )}
-    </details>
+        ))}
+      </div>
+    </section>
   );
 }

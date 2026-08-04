@@ -1,23 +1,29 @@
 "use client";
 
 /**
- * The orb, plus the inputs that move it.
+ * The orb, full-bleed: it is the room, not a widget in it.
  *
  * The level comes from `getOutputByteFrequencyData()` — the WebRTC analyser in
  * this tab — read once per frame. That is the whole reason the voice moved into
  * the browser: the old console polled a Python meter once a second, and an orb
  * that updates at 1fps does not breathe with anybody.
+ *
+ * Gesture STATE lives in the page (the toggle sits in the HUD); this component
+ * only owns the camera stream that state implies.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
-import { GESTURES_ENABLED, startHandTracking, type HandTracker } from "@/lib/handTracker";
+import { startHandTracking, type HandTracker } from "@/lib/handTracker";
 import { createOrbScene, type OrbHandle, type OrbMode } from "@/lib/orbScene";
 
 type Props = {
   mode: OrbMode;
   /** Returns the current output spectrum, or null when no session is live. */
   getFrequencies: () => Uint8Array | null;
+  gesturesOn: boolean;
+  onGestureReady: (live: boolean) => void;
+  onGestureError: (message: string) => void;
 };
 
 /** Mean of the low half of the spectrum: where a human voice actually lives. */
@@ -29,13 +35,10 @@ function levelFrom(bytes: Uint8Array | null): number {
   return total / half / 255;
 }
 
-export default function JobvisOrb({ mode, getFrequencies }: Props) {
+export default function JobvisOrb({ mode, getFrequencies, gesturesOn, onGestureReady, onGestureError }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const orbRef = useRef<OrbHandle | null>(null);
-  const [gesturesOn, setGesturesOn] = useState(false);
-  const [gestureStarting, setGestureStarting] = useState(false);
-  const [gestureError, setGestureError] = useState("");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,19 +64,19 @@ export default function JobvisOrb({ mode, getFrequencies }: Props) {
     orbRef.current?.setMode(mode);
   }, [mode]);
 
-  // Mouse drag, wheel, and the keyboard shortcuts.
+  // Drag, wheel and keys work anywhere on the stage — the orb IS the page now.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
 
+    const interactive = (target: EventTarget | null) => !(target instanceof Element && target.closest(".no-drag"));
+
     const down = (event: PointerEvent) => {
+      if (!interactive(event.target)) return;
       dragging = true;
       lastX = event.clientX;
       lastY = event.clientY;
-      canvas.setPointerCapture(event.pointerId);
     };
     const move = (event: PointerEvent) => {
       if (!dragging) return;
@@ -85,79 +88,60 @@ export default function JobvisOrb({ mode, getFrequencies }: Props) {
       dragging = false;
     };
     const wheel = (event: WheelEvent) => {
-      event.preventDefault();
+      if (!interactive(event.target)) return;
       orbRef.current?.zoomBy(event.deltaY > 0 ? 1.06 : 0.94);
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === "r" || event.key === "R") orbRef.current?.reset();
       if (event.key === "+" || event.key === "=") orbRef.current?.zoomBy(0.9);
       if (event.key === "-" || event.key === "_") orbRef.current?.zoomBy(1.1);
-      if ((event.key === "g" || event.key === "G") && GESTURES_ENABLED) setGesturesOn((on) => !on);
     };
 
-    canvas.addEventListener("pointerdown", down);
-    canvas.addEventListener("pointermove", move);
-    canvas.addEventListener("pointerup", up);
-    canvas.addEventListener("wheel", wheel, { passive: false });
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("wheel", wheel, { passive: true });
     window.addEventListener("keydown", key);
     return () => {
-      canvas.removeEventListener("pointerdown", down);
-      canvas.removeEventListener("pointermove", move);
-      canvas.removeEventListener("pointerup", up);
-      canvas.removeEventListener("wheel", wheel);
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("wheel", wheel);
       window.removeEventListener("keydown", key);
     };
   }, []);
 
-  // Gestures: the webcam only opens after this flips on, and closes when it flips off.
+  // The webcam only opens once the HUD toggle flips on, and closes when it flips off.
   useEffect(() => {
     if (!gesturesOn || !videoRef.current) return;
     let tracker: HandTracker | null = null;
     let cancelled = false;
 
-    // Nothing is live until getUserMedia resolves, and it sits pending for as
-    // long as Chrome's permission bubble is open. Say "starting" until then —
-    // claiming the camera is on while the browser is still asking is a lie.
-    setGestureStarting(true);
     startHandTracking(videoRef.current, {
       spinBy: (dx, dy) => orbRef.current?.spinBy(dx, dy),
       zoomBy: (factor) => orbRef.current?.zoomBy(factor),
     })
       .then((started) => {
-        if (cancelled) started.stop();
-        else tracker = started;
+        if (cancelled) {
+          started.stop();
+          return;
+        }
+        tracker = started;
+        onGestureReady(true);
       })
-      .catch((error: Error) => {
-        setGestureError(error.message || "hand tracking unavailable");
-        setGesturesOn(false);
-      })
-      .finally(() => setGestureStarting(false));
+      .catch((error: Error) => onGestureError(error.message || "hand tracking unavailable"));
 
     return () => {
       cancelled = true;
-      setGestureStarting(false);
+      onGestureReady(false);
       tracker?.stop();
     };
-  }, [gesturesOn]);
-
-  const gestureLabel = gestureStarting
-    ? "starting camera…"
-    : gesturesOn
-      ? "camera on — pinch to spin (G)"
-      : "enable hand control (G)";
+  }, [gesturesOn, onGestureReady, onGestureError]);
 
   return (
-    <div className="orb-wrap">
-      <canvas ref={canvasRef} className="orb-canvas" aria-label="Jobvis" />
-      {GESTURES_ENABLED && (
-        <div className="orb-controls">
-          <button type="button" className="ghost" onClick={() => setGesturesOn((on) => !on)}>
-            {gestureLabel}
-          </button>
-          {gestureError && <span className="orb-error">{gestureError}</span>}
-        </div>
-      )}
+    <>
+      <canvas ref={canvasRef} className="orb-canvas" aria-hidden="true" />
       <video ref={videoRef} className="orb-video" playsInline muted />
-    </div>
+    </>
   );
 }

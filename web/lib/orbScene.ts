@@ -24,21 +24,27 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 
 export type OrbMode = "idle" | "connecting" | "listening" | "speaking" | "error";
 
-/** Ice azure. The wizard stays green; blue means you are talking to Jobvis. */
+/**
+ * Spectral iridescence. Each shell takes a different hue and they counter-
+ * rotate, so the colour shifts as the thing turns — that motion is what makes
+ * it read as iridescent rather than merely colourful. The wizard stays green;
+ * this riot means you are talking to Jobvis.
+ */
 export const PALETTE = {
-  core: 0xbfe6ff,
-  shells: 0x3aa9ff,
-  rings: 0x1b7fd4,
-  falloff: 0x072a52,
-  backdrop: 0x060b12,
-  error: 0xb45309,
+  core: 0xeafcff,
+  cyan: 0x22e5ff,
+  violet: 0x8b5cff,
+  magenta: 0xff3dda,
+  rose: 0xff5c8a,
+  backdrop: 0x07030f,
+  error: 0xffd166,
 };
 
 /** A cheap chromatic aberration: split the channels radially, strongest at the edge. */
 const ChromaticAberrationShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    amount: { value: 0.0016 },
+    amount: { value: 0.0032 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -75,38 +81,56 @@ export type OrbHandle = {
 };
 
 const MIN_DISTANCE = 3.0;
-const MAX_DISTANCE = 9.0;
+const MAX_DISTANCE = 12.0;
 
 export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(PALETTE.backdrop, 0.085);
+  scene.fog = new THREE.FogExp2(PALETTE.backdrop, 0.07);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  let distance = 5.2;
+  // Full-bleed: keep the orb close enough to still glow, and nudge it off the
+  // centreline so it sits clear of the slab while its outer shells still pass
+  // BEHIND the glass — the refraction is the composition.
+  const restingDistance = () => (window.innerWidth < 720 ? 7.4 : 5.2);
+  let distance = restingDistance();
   camera.position.set(0, 0, distance);
 
   const group = new THREE.Group();
   scene.add(group);
 
   // --- core -----------------------------------------------------------------
+  // Wireframe, not solid: a filled sphere under this much bloom is just a white
+  // disc, and the faceting is what makes it read as constructed rather than lit.
   const coreMaterial = new THREE.MeshBasicMaterial({
-    color: PALETTE.core,
+    color: PALETTE.cyan,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.7,
+    wireframe: true,
     blending: THREE.AdditiveBlending,
   });
-  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 3), coreMaterial);
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.52, 2), coreMaterial);
   group.add(core);
+
+  // The heart: small and solid, so there is something genuinely bright for the
+  // bloom to bleed from. The faceted shell above keeps it from reading as a disc.
+  const heartMaterial = new THREE.MeshBasicMaterial({
+    color: PALETTE.core,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+  });
+  const heart = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 32), heartMaterial);
+  group.add(heart);
 
   const halo = new THREE.Mesh(
     new THREE.SphereGeometry(0.72, 32, 32),
     new THREE.MeshBasicMaterial({
-      color: PALETTE.shells,
+      color: PALETTE.magenta,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.1,
       blending: THREE.AdditiveBlending,
       side: THREE.BackSide,
     }),
@@ -123,21 +147,21 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   }
   const spiral = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(spiralPoints),
-    new THREE.LineBasicMaterial({ color: PALETTE.core, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending }),
+    new THREE.LineBasicMaterial({ color: PALETTE.magenta, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending }),
   );
   group.add(spiral);
 
   // --- shells ---------------------------------------------------------------
   const shellSpecs = [
-    { radius: 1.15, detail: 1, opacity: 0.5, speed: 0.16 },
-    { radius: 1.5, detail: 2, opacity: 0.26, speed: -0.1 },
-    { radius: 1.95, detail: 1, opacity: 0.14, speed: 0.06 },
+    { radius: 1.15, detail: 1, opacity: 0.72, speed: 0.16, color: PALETTE.cyan },
+    { radius: 1.5, detail: 2, opacity: 0.4, speed: -0.1, color: PALETTE.violet },
+    { radius: 1.95, detail: 1, opacity: 0.3, speed: 0.06, color: PALETTE.magenta },
   ];
   const shells = shellSpecs.map((spec) => {
     const mesh = new THREE.Mesh(
       new THREE.IcosahedronGeometry(spec.radius, spec.detail),
       new THREE.MeshBasicMaterial({
-        color: PALETTE.shells,
+        color: spec.color,
         wireframe: true,
         transparent: true,
         opacity: spec.opacity,
@@ -145,7 +169,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
       }),
     );
     group.add(mesh);
-    return { mesh, speed: spec.speed, baseOpacity: spec.opacity, baseScale: 1 };
+    return { mesh, speed: spec.speed, baseOpacity: spec.opacity, hue: new THREE.Color(spec.color).getHSL({ h: 0, s: 0, l: 0 }).h };
   });
 
   // --- debris ---------------------------------------------------------------
@@ -165,8 +189,8 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   const debris = new THREE.Points(
     debrisGeometry,
     new THREE.PointsMaterial({
-      color: PALETTE.rings,
-      size: 0.028,
+      color: PALETTE.cyan,
+      size: 0.03,
       transparent: true,
       opacity: 0.7,
       blending: THREE.AdditiveBlending,
@@ -175,14 +199,47 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   );
   group.add(debris);
 
+  // --- ambient field --------------------------------------------------------
+  // A wide, faint drift that reaches the corners, so the animation genuinely
+  // owns the whole frame — and so the glass slab always has something moving
+  // behind it to refract instead of blurring flat black.
+  const ambientCount = 900;
+  const ambient = new Float32Array(ambientCount * 3);
+  for (let i = 0; i < ambientCount; i++) {
+    const theta = Math.acos(2 * ((i + 0.5) / ambientCount) - 1);
+    const phi = i * 2.39996;
+    const radius = 4.4 + ((i * 37) % 100) / 100 * 3.6;
+    ambient[i * 3] = Math.sin(theta) * Math.cos(phi) * radius;
+    ambient[i * 3 + 1] = Math.cos(theta) * radius * 0.72;
+    ambient[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
+  }
+  const ambientGeometry = new THREE.BufferGeometry();
+  ambientGeometry.setAttribute("position", new THREE.BufferAttribute(ambient, 3));
+  const ambientField = new THREE.Points(
+    ambientGeometry,
+    new THREE.PointsMaterial({
+      color: PALETTE.violet,
+      size: 1.9,
+      // Constant pixel size, like stars. With attenuation on, a point that
+      // drifts near the camera renders as a large square — one did.
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0.34,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  // Deliberately NOT in `group`: it should not swing when you spin the orb.
+  scene.add(ambientField);
+
   // --- scan rings -----------------------------------------------------------
   const rings = [0, 1, 2].map((i) => {
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(1.7 + i * 0.22, 0.005, 8, 160),
       new THREE.MeshBasicMaterial({
-        color: i === 1 ? PALETTE.core : PALETTE.rings,
+        color: [PALETTE.magenta, PALETTE.cyan, PALETTE.rose][i],
         transparent: true,
-        opacity: 0.38,
+        opacity: 0.55,
         blending: THREE.AdditiveBlending,
       }),
     );
@@ -195,7 +252,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
   // --- post -----------------------------------------------------------------
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.6, 0.12);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.8, 0.15);
   composer.addPass(bloom);
   const chroma = new ShaderPass(ChromaticAberrationShader);
   composer.addPass(chroma);
@@ -223,11 +280,22 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     bloom.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    // The slab occupies the left edge on wide screens; sit the core right of it
+    // so the composition balances, then let the outer shells reach back under.
+    group.position.x = width >= 900 ? 0.55 : 0;
+    distance = restingDistance();
   }
 
-  function tint(color: number) {
-    coreMaterial.color.setHex(color === PALETTE.error ? PALETTE.error : PALETTE.core);
-    for (const shell of shells) (shell.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+  let faulted = false;
+
+  function tint(fault: boolean) {
+    faulted = fault;
+    coreMaterial.color.setHex(fault ? PALETTE.error : PALETTE.cyan);
+    heartMaterial.color.setHex(fault ? PALETTE.error : PALETTE.core);
+    shells.forEach((shell, i) => {
+      (shell.mesh.material as THREE.MeshBasicMaterial).color.setHex(fault ? PALETTE.error : shellSpecs[i].color);
+    });
+    (spiral.material as THREE.LineBasicMaterial).color.setHex(fault ? PALETTE.error : PALETTE.magenta);
   }
 
   function frame() {
@@ -245,23 +313,36 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
 
     core.scale.setScalar(1 + energy * 0.35);
     core.rotation.y += delta * (0.35 + smoothed * 2.2);
-    coreMaterial.opacity = 0.45 + energy * 0.5;
+    coreMaterial.opacity = 0.4 + energy * 0.45;
+    heart.scale.setScalar(1 + energy * 0.55);
+    heartMaterial.opacity = 0.6 + energy * 0.4;
     halo.scale.setScalar(1 + energy * 0.5);
-    (halo.material as THREE.MeshBasicMaterial).opacity = 0.06 + energy * 0.22;
+    (halo.material as THREE.MeshBasicMaterial).opacity = 0.035 + energy * 0.16;
 
     spiral.rotation.y -= delta * (0.6 + smoothed * 2.6);
     (spiral.material as THREE.LineBasicMaterial).opacity = 0.28 + energy * 0.5;
 
-    for (const shell of shells) {
+    shells.forEach((shell, i) => {
       shell.mesh.rotation.y += delta * shell.speed;
       shell.mesh.rotation.x += delta * shell.speed * 0.45;
       shell.mesh.scale.setScalar(1 + smoothed * 0.09);
-      (shell.mesh.material as THREE.MeshBasicMaterial).opacity = shell.baseOpacity * (0.65 + energy * 0.9);
-    }
+      const material = shell.mesh.material as THREE.MeshBasicMaterial;
+      material.opacity = shell.baseOpacity * (0.7 + energy * 0.9);
+      // The shimmer: each shell's hue drifts on its own phase, so the whole
+      // thing cycles through the spectrum instead of sitting on three colours.
+      if (!faulted) {
+        const drift = Math.sin(time * 0.22 + i * 2.1) * 0.07;
+        material.color.setHSL((shell.hue + drift + 1) % 1, 0.95, 0.6 + energy * 0.12);
+      }
+    });
 
     debris.rotation.y += delta * 0.045;
     debris.rotation.x = Math.sin(time * 0.12) * 0.12;
     (debris.material as THREE.PointsMaterial).opacity = 0.4 + energy * 0.45;
+
+    ambientField.rotation.y += delta * 0.012;
+    ambientField.rotation.x = Math.sin(time * 0.05) * 0.06;
+    (ambientField.material as THREE.PointsMaterial).opacity = 0.32 + energy * 0.34;
 
     rings.forEach((ring, i) => {
       ring.rotation.z += delta * (0.22 + i * 0.09) * (i % 2 === 0 ? 1 : -1);
@@ -278,8 +359,8 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     group.rotation.y = spinY + time * 0.05;
     group.rotation.x = THREE.MathUtils.clamp(spinX, -0.9, 0.9);
 
-    bloom.strength = 0.65 + energy * 0.9;
-    chroma.uniforms.amount.value = 0.0012 + smoothed * 0.004;
+    bloom.strength = 0.95 + energy * 1.05;
+    chroma.uniforms.amount.value = 0.0032 + smoothed * 0.007;
 
     camera.position.z += (distance - camera.position.z) * Math.min(1, delta * 6);
     composer.render();
@@ -295,7 +376,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     },
     setMode: (next: OrbMode) => {
       mode = next;
-      tint(next === "error" ? PALETTE.error : PALETTE.shells);
+      tint(next === "error");
     },
     spinBy: (dx: number, dy: number) => {
       momentumY += dx;
@@ -306,7 +387,7 @@ export function createOrbScene(canvas: HTMLCanvasElement): OrbHandle {
     },
     reset: () => {
       spinX = spinY = momentumX = momentumY = 0;
-      distance = 5.2;
+      distance = restingDistance();
     },
     dispose: () => {
       disposed = true;
