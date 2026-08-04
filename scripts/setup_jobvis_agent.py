@@ -101,10 +101,22 @@ def pick_voice(client: httpx.Client) -> str | None:
 
 
 def find_agent_id(client: httpx.Client) -> str | None:
-    """ELEVENLABS_AGENT_ID when set, else an existing agent named Jobvis."""
+    """ELEVENLABS_AGENT_ID when it still exists, else an agent named Jobvis.
+
+    The configured id is checked rather than trusted: rotating to a different
+    ElevenLabs account leaves a perfectly valid-looking id in .env that belongs
+    to the old one, and patching it 404s. Falling through to creation is what
+    somebody in that position actually wants.
+    """
     settings = get_settings()
     if settings.elevenlabs_agent_id:
-        return settings.elevenlabs_agent_id
+        probe = client.get(f"{API}/v1/convai/agents/{settings.elevenlabs_agent_id}")
+        if probe.status_code == 200:
+            return settings.elevenlabs_agent_id
+        if probe.status_code == 404:
+            print(f"ELEVENLABS_AGENT_ID={settings.elevenlabs_agent_id} does not exist on this account — creating a new agent.")
+        else:
+            probe.raise_for_status()
     agents = client.get(f"{API}/v1/convai/agents", params={"page_size": 100}).raise_for_status().json().get("agents", [])
     for agent in agents:
         if agent.get("name") == AGENT_NAME:

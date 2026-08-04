@@ -76,9 +76,9 @@ body {
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(46% 54% at 14% 46%, rgba(255, 61, 218, 0.2), transparent 72%),
-    radial-gradient(40% 46% at 88% 78%, rgba(34, 229, 255, 0.16), transparent 74%),
-    radial-gradient(34% 40% at 72% 12%, rgba(139, 92, 255, 0.16), transparent 74%),
+    radial-gradient(46% 54% at 14% 46%, rgba(255, 61, 218, 0.13), transparent 72%),
+    radial-gradient(40% 46% at 88% 78%, rgba(34, 229, 255, 0.1), transparent 74%),
+    radial-gradient(34% 40% at 72% 12%, rgba(139, 92, 255, 0.1), transparent 74%),
     radial-gradient(82% 70% at 56% 50%, transparent 58%, rgba(5, 2, 12, 0.55) 100%);
 }
 
@@ -92,7 +92,7 @@ body {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  opacity: calc(0.18 + var(--level, 0) * 0.82);
+  opacity: calc(0.1 + var(--level, 0) * 0.5);
   background:
     radial-gradient(
       120% 90% at 50% 50%,
@@ -261,8 +261,8 @@ body {
      black, and blurred black is still black. The pale wash does the lifting;
      the blur and saturation make it frosted rather than merely translucent. */
   background: linear-gradient(155deg, rgba(240, 236, 255, 0.1), rgba(200, 190, 255, 0.055) 55%, rgba(180, 200, 255, 0.04));
-  backdrop-filter: blur(30px) saturate(190%) brightness(1.3);
-  -webkit-backdrop-filter: blur(30px) saturate(190%) brightness(1.3);
+  backdrop-filter: blur(30px) saturate(170%) brightness(1.12);
+  -webkit-backdrop-filter: blur(30px) saturate(170%) brightness(1.12);
   box-shadow:
     0 30px 80px rgba(6, 2, 16, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.26),
