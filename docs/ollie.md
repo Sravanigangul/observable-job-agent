@@ -285,6 +285,26 @@ to take on faith.
 
 For the Part 3 post. Each needs a logged-in Comet on the `job-scout` project.
 
+**The draft only calls for three of these: O1, O6 and O10.** The rest are
+optional depth for `docs/`, not blog slots.
+
+**O1 is already shot.** The exact trace, verified 2026-08-05 to be the one the
+post's opening code block quotes (`source.jsearch` 15.4s, `source.adzuna` 0.9s,
+`source.remotive` 0.2s, `sources_used: ["adzuna"]`):
+
+```
+https://www.comet.com/opik/shirin-4590/projects/019f5bf7-e5c8-73dd-b739-dc2c9af67762/logs?traces_search=concurrent&trace=019fcb21-c8ce-7d21-b8e4-53a1dcedc333
+```
+
+Collapse the Ollie panel first (the `»` at the panel's top-left), or it eats a
+third of the frame.
+
+**O6's pending-approval state is gone** — that conversation's cards now read
+"Approved". To reshoot it, ask Ollie for any trivial edit and screenshot the
+card *before* clicking; the three buttons ("Always allow" / "Allow once" /
+"Deny") are the actual subject, because the post's argument is that the first
+button ends the review.
+
 | # | Shot | Click path |
 |---|------|------------|
 | O1 | Span tree with `source.*` children, durations visible | **Traces** → a search trace → expand the span tree |
