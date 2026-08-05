@@ -63,6 +63,25 @@ project you named — but it is still a real grant of access to a directory on
 your machine, and it should be a deliberate choice rather than a step you
 click past. It is also why nothing in this repo starts it for you.
 
+### Two failure modes worth recognising, because they look identical
+
+Both present as Ollie sitting on "Working…" for minutes with no card. They are
+not the same problem and the fix is different.
+
+**The bridge died.** `pgrep -f "opik connect"` returns nothing. Ollie eventually
+says so itself — *"the bridge connection dropped, connect_edit is no longer
+available… Reconnect with `opik connect --project job-scout`"* — and helpfully
+prints the diff for you to apply by hand. Being **logged into Opik in the
+browser is not the same as having the bridge up**; the browser session and the
+local daemon are independent, and only the daemon grants file access.
+
+**Ollie is out of credits.** The bridge is fine (`Ollie connected` shows bottom
+right, pairing succeeded), but the reply comes back as *"Your API credit limit
+has been reached."* Observed 2026-08-05 after roughly a dozen requests, one of
+which hung for 460s before failing rather than erroring immediately. Nothing is
+written and nothing is lost, but no amount of reconnecting fixes it. Check the
+Admin dashboard before debugging the bridge.
+
 ## The five capabilities
 
 Run through them in order; each one sets up the next.
@@ -299,11 +318,22 @@ https://www.comet.com/opik/shirin-4590/projects/019f5bf7-e5c8-73dd-b739-dc2c9af6
 Collapse the Ollie panel first (the `»` at the panel's top-left), or it eats a
 third of the frame.
 
-**O6's pending-approval state is gone** — that conversation's cards now read
-"Approved". To reshoot it, ask Ollie for any trivial edit and screenshot the
-card *before* clicking; the three buttons ("Always allow" / "Allow once" /
-"Deny") are the actual subject, because the post's argument is that the first
-button ends the review.
+**O6 is still unshot, and is the most valuable missing image.** The original
+conversation's cards now read "Approved", and a re-shoot attempt on 2026-08-05
+failed on the Ollie credit limit, not the bridge (which paired fine). When
+credits are back:
+
+1. `uv run opik connect --project job-scout`, open the pairing link
+2. Ask for something trivial and reversible — *"add a one-line comment above the
+   JSearchSource class saying its 15s timeout is deliberate"*
+3. Screenshot the card **before** clicking. The three buttons
+   ("Always allow" / "Allow once" / "Deny") are the actual subject, because the
+   post's argument is that the first one quietly ends the review
+4. Click **Deny**. The image is the point; the edit is not
+
+Crop tight and box the buttons — a full-window capture renders at 728px in
+Substack, which puts 11px UI text at about 5px and makes the shot decorative
+rather than evidential.
 
 | # | Shot | Click path |
 |---|------|------------|
