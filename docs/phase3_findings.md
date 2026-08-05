@@ -116,12 +116,18 @@ paid in full on every search (wall clock == deadline for any value above ~1s,
 because Adzuna is finished by then), and no value under 8s ever gives JSearch a
 chance to win. Default is **1.0s**, with the reasoning recorded in `config.py`.
 
-**Measured, paired, same process, deadline as the only variable:**
+**Measured, paired, same process, 5 runs per mode, deadline as the only variable:**
 
-| search | before | after | jobs |
-|---|---|---|---|
-| "data scientist", Berlin | 16 109 ms | **1 103 ms** | 10 → 10 |
-| "machine learning engineer", remote US | 15 325 ms | **1 005 ms** | 10 → 10 |
+| search (n=5 each) | before median | after median | before range | after range |
+|---|---|---|---|---|
+| "data scientist", Berlin | 15 294 ms | **1 008 ms** | 11 234 – 16 114 | 1 004 – 1 011 |
+| "machine learning engineer", remote US | 10 085 ms | **1 006 ms** | 9 312 – 14 157 | 1 001 – 1 268 |
+
+All runs returned 10 jobs (the cap), but from different sources: `['jsearch']`
+or `['adzuna']` before, consistently `['adzuna']` after. The variance collapse
+is arguably the bigger win — a 4.9s-wide spread becomes 7ms. Within those five
+Berlin runs the blocking mode resolved from JSearch on some and Adzuna on
+others, which reproduces Ollie's "reliability wildcard" reading in one sitting.
 
 **`job-scout-search-suite`, before → after:**
 

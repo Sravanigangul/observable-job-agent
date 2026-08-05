@@ -141,12 +141,18 @@ Consumption order and the <5/<3 thresholds are unchanged, the HTTP timeout stays
 at 15s, and sequential mode is untouched (the deadline only exists when there is
 something else already in flight).
 
-Measured live, paired, same process, deadline as the only variable:
+Measured live, paired, same process, 5 runs per mode, deadline as the only
+variable (medians; the ranges matter more than the medians here):
 
-| search | blocking | 1.0s deadline | jobs |
-|---|---|---|---|
-| "data scientist", Berlin | 16 109 ms | **1 103 ms** | 10 → 10 |
-| "machine learning engineer", remote US | 15 325 ms | **1 005 ms** | 10 → 10 |
+| search (n=5 each) | blocking | 1.0s deadline |
+|---|---|---|
+| "data scientist", Berlin | 15 294 ms (11 234 – 16 114) | **1 008 ms (1 004 – 1 011)** |
+| "machine learning engineer", remote US | 10 085 ms (9 312 – 14 157) | **1 006 ms (1 001 – 1 268)** |
+
+Same lesson as changes 6-7: run it more than once. A single pair suggested
+16.1s → 1.1s; five pairs show the honest 10-15x spread *and* the variance
+collapse, which is the more useful property. All runs returned 10 jobs (the
+`limit`), sourced from Adzuna after the change rather than JSearch.
 
 **Why 1.0 and not the 5.0 originally proposed.** The deadline is paid in full on
 essentially every search, because Adzuna is finished by ~1s:
