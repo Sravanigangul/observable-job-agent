@@ -89,6 +89,10 @@ class JSearchSource:
     name = "jsearch"
     BASE = "https://api.openwebninja.com/jsearch/search-v2"
 
+    # NOTE: this 15.0s default is the subject of the Ollie demo in docs/ollie.md
+    # — measured spending its full timeout for zero jobs on every search, and
+    # left in place deliberately so the codebase loop has a real bug to fix.
+    # Do not quietly change it; see the release checklist in that doc.
     def __init__(self, api_key: str = "", timeout: float = 15.0) -> None:
         self.api_key = api_key or get_settings().jsearch_api_key.get_secret_value()
         self.timeout = timeout

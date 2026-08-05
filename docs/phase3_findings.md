@@ -84,6 +84,26 @@ deterministic thin-primary bench, no-op within noise when the primary is
 rich. Details + trade-off in `docs/optimizing_latency.md` (Phase 3
 addendum).
 
+## Open, and deliberately so: the 15-second JSearch timeout
+
+Per-source spans (`traced_call`) exposed one on their first real run:
+`source.jsearch` spends **15.3s** — exactly its timeout — and returns **zero
+jobs**, on every search. Reproduced three times directly (15 264 / 15 265 /
+15 244 ms). With the concurrent fan-out, wall time is the slowest source, so
+every search pays that tax for a result the cascade then discards
+(`sources_used: ['adzuna']`).
+
+It is **not fixed here on purpose**: it is the subject of the Ollie codebase
+loop in [`ollie.md`](ollie.md) — diagnose from the trace, read `jobs_api.py`,
+propose `SCOUT_SOURCE_TIMEOUT`, rerun, verify against
+`job-scout-search-suite` (currently **33%**, red in exactly the right places).
+A shorter timeout also drops sources that are merely slow, which is a product
+decision rather than a bug fix.
+
+**This must be resolved before `part3.0` ships.** Shipping a release with a
+known 15-second tax on every search would be indefensible, however good the
+demo is.
+
 ## Weakness-by-weakness status
 
 Filled in as the work lands; every Phase 2 weakness gets a verdict here.
