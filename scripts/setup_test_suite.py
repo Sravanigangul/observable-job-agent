@@ -81,7 +81,8 @@ def _task(item: dict) -> dict:
     )
     model = get_chat_model(get_settings().scout_tailor_model, temperature=0.3)
     pack = TailoringPack.model_validate(model.with_structured_output(TailoringPack).invoke(prompt))
-    return {"output": pack.model_dump()}
+    # Both keys are required: run_tests rejects a result missing "input".
+    return {"input": data, "output": pack.model_dump()}
 
 
 def main() -> None:
