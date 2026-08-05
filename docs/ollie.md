@@ -138,6 +138,24 @@ Ollie also writes a regression test with each fix. Keep an eye on where it puts
 it: `gates/` in this repo is deterministic and offline by contract, so a test
 that hits live job APIs belongs in the suite, not there.
 
+### 4b. The warm-up write: let Ollie add the entrypoint
+
+Ollie's own report noticed there is no `@opik.track(entrypoint=True)` anywhere,
+which is why the **Agent Playground** cannot run this agent from the UI. That
+makes it the ideal *first* thing to let it edit: additive, one decorator, a
+diff you can read in five seconds, and it unlocks a capability rather than
+changing behaviour.
+
+> "Add an entrypoint so I can run this agent from the Agent Playground."
+
+Order your session by blast radius, not by interest. A tool that is about to
+edit your working tree should earn it on something trivial first — and if it
+fumbles the trivial change, you have learned that cheaply.
+
+Then check the Playground actually works before moving on. That is the
+verification step for a write, the same way the search suite is the
+verification step for the timeout fix.
+
 ### 5. Cross-workspace search
 
 Ollie queries traces, datasets, experiments and prompts in one conversation.
@@ -160,6 +178,56 @@ Each answer is checkable against a number already written down in this repo,
 which is the right way to build trust in a tool that reads your data: ask it
 things you already know before you ask it things you do not.
 
+## What Ollie actually said, and what survived checking
+
+Asked *"How can I improve my agent?"* on 2026-08-05, Ollie read the experiments,
+the optimizer run and the recent traces, and came back with four items. Scoring
+them against what this repo already records is the whole "trust but verify"
+lesson, delivered by the tool itself:
+
+| # | Ollie's claim | Verdict |
+|---|---------------|---------|
+| 1 | Search suite at 33%; sources slow and/or empty; `fetch_jobs` is the bottleneck | **Right**, and it found the same thing we did — but see below |
+| 2 | 4.1-mini fabricates less (0.14) and hallucinates more (0.37); 4o-mini the reverse (0.17 / 0.28) | **Fabrication numbers exact** (we record 0.1423 and 0.1749). Hallucination figures are **not in our records** — unverified |
+| 3 | Recent eval traces error with "must return a dict with 'input' and 'output'" | **Right about the error, wrong about the world** — already fixed |
+| 4 | No `@opik.track(entrypoint=True)`, so the Agent Playground cannot run your agent | **Right, and new** — `grep -rn entrypoint src/` returns nothing |
+
+Three things worth sitting with.
+
+**It recommended work already shipped.** Item 1's suggested fixes were "add
+timeouts per source, parallelize fetches, or drop sources that return nothing".
+The middle one landed in Phase 3 — `SCOUT_CONCURRENT_SOURCES`, on by default,
+measured at 3.01s → 2.01s and written up in
+[`optimizing_latency.md`](optimizing_latency.md). Ollie can read your traces;
+it cannot read your changelog. This is exactly the check this chapter tells you
+to run, and it fired on the first real question.
+
+**It reported a fixed bug as outstanding.** Item 3 is real — `opik.run_tests`
+does require both keys, and both suite scripts did return only `output`. It was
+fixed roughly an hour before Ollie was asked. It was reading traces from before
+the fix and had no way to know. An assistant grounded in telemetry inherits
+telemetry's lag.
+
+**It found something genuinely new.** Item 2's *trade-off* is not in any of our
+findings: we measured fabrication on both models and never put the hallucination
+judge beside it. Whether the specific numbers hold is untested — the metric
+disagreement in `phase2_eval_report.md` (0.44 vs 0.84 on the same explanations)
+is precisely why a judged number needs its own verification before it earns a
+sentence in a blog post. **Open the experiments and confirm 0.37 / 0.28 before
+quoting them anywhere.**
+
+Item 4 is the best kind of finding: cheap, checkable, and it unlocks something
+we were not using.
+
+### The scorecard is the story
+
+Two of four right and immediately actionable, one right but stale, one right
+with a recommendation already implemented. That is a genuinely useful assistant
+and an unreliable narrator at the same time, which is the honest thing to
+report about a tool reading your traces. None of the four required Ollie to be
+*trusted* — every one was checkable in under a minute against something already
+written down.
+
 ## The honest close
 
 Ollie did not find the 15-second timeout. The instrumentation did — because
@@ -168,6 +236,28 @@ loud, then followed it into the code. That is a genuinely useful thing for a
 tool to do, and it is not the same as the tool doing your observability for
 you. Every question above was answerable only because the trace already
 contained the answer.
+
+## The session to run, in order
+
+Copy-paste prompts, ordered so each one earns the next. Nothing here needs you
+to trust an answer you cannot check within a minute.
+
+| # | Ask Ollie | What you are showing | Check it against |
+|---|-----------|----------------------|------------------|
+| 1 | *"How can I improve my agent?"* | It reads experiments, traces and optimizer runs unprompted | The scorecard above — expect a stale item and an already-shipped suggestion |
+| 2 | *"This search took 15 seconds. Which part was slow?"* | Trace investigation | `source.jsearch` in the span tree |
+| 3 | *"Did the slow source contribute any results?"* | Reading the trace output, not guessing | `sources_used: ['adzuna']` |
+| 4 | *"Read the code behind the source.jsearch span and tell me where that 15 seconds comes from."* | Source-code integration | `jobs_api.py`, `timeout: float = 15.0` — open the file |
+| 5 | *"Add an entrypoint so I can run this agent from the Agent Playground."* | A safe first write, with approval | `git diff`, then the Playground runs |
+| 6 | *"Propose a change so one slow source cannot hold up the whole search. Keep the cascade's consumption order and thresholds unchanged."* | The real fix | `optimizing_latency.md` — reject anything already tried |
+| 7 | *"Rerun that search with the original inputs."* | Agent re-execution | The new span tree |
+| 8 | *"Run the job-scout-search-suite against the updated agent."* | Regression proof | 33% → should be 100% |
+| 9 | *"Compare the tailoring-gpt-4.1-mini experiments before and after the prompt optimization."* | Cross-workspace search | 0.309 → 0.1423, already on record |
+| 10 | *"Which traces have fabrication_flags above zero?"* | Querying traces conversationally | The flags in `phase3_findings.md` |
+
+Ask 9 before you ask anything you cannot check. If it gets a number you already
+know wrong, that is worth far more than a correct answer to a question you had
+to take on faith.
 
 ## Screenshot shot-list
 
@@ -184,6 +274,8 @@ For the Part 3 post. Each needs a logged-in Comet on the `job-scout` project.
 | O7 | Search suite red, then green | **Test suites** → `job-scout-search-suite` → the two runs side by side |
 | O8 | Prompt library version history | **Prompts** → `tailor` → versions |
 | O9 | Cross-workspace answer | Ollie panel, capability 5 |
+| O10 | The "how can I improve my agent?" report, with its chart | Ollie panel, ask 1 — the scorecard beside it is the point |
+| O11 | The Agent Playground running the agent | after ask 5 lands the entrypoint |
 
 Opik's UI ships weekly; if a path has moved, `comet.com/docs/opik/llms.txt`
 resolves faster than clicking around.
@@ -195,3 +287,5 @@ resolves faster than clicking around.
 - [ ] `job-scout-search-suite` green after the fix, with both runs kept for the
       before/after screenshot
 - [ ] `docs/phase3_findings.md` updated with the measured after-number
+- [ ] Ollie's hallucination figures (0.37 / 0.28) confirmed in the experiments
+      before they are quoted in the post, or dropped
