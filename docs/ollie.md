@@ -210,7 +210,7 @@ lesson, delivered by the tool itself:
 | # | Ollie's claim | Verdict |
 |---|---------------|---------|
 | 1 | Search suite at 33%; sources slow and/or empty; `fetch_jobs` is the bottleneck | **Right**, and it found the same thing we did — but see below |
-| 2 | 4.1-mini fabricates less (0.14) and hallucinates more (0.37); 4o-mini the reverse (0.17 / 0.28) | **Fabrication numbers exact** (we record 0.1423 and 0.1749). Hallucination figures are **not in our records** — unverified |
+| 2 | 4.1-mini fabricates less (0.14) and hallucinates more (0.37); 4o-mini the reverse (0.17 / 0.28) | **Right, and we were wrong to doubt it.** Fabrication exact (0.1423 / 0.1749). The hallucination figures are **recorded feedback scores** on experiment `tailoring-gpt-4.1-mini` (30 Jul), visible in its header next to the fabrication number: `hallucination_metric (avg) 0.37`. They were never in our *markdown*, which is not the same as not in our records |
 | 3 | Recent eval traces error with "must return a dict with 'input' and 'output'" | **Right about the error, wrong about the world** — already fixed |
 | 4 | No `@opik.track(entrypoint=True)`, so the Agent Playground cannot run your agent | **Right, and new** — `grep -rn entrypoint src/` returns nothing |
 
@@ -333,5 +333,10 @@ resolves faster than clicking around.
 - [x] `docs/phase3_findings.md` updated with the measured after-numbers
 - [ ] JSearch itself is still slow. Containing is not repairing — decide before
       `part3.0` whether to demote it below Adzuna in the cascade
-- [ ] Ollie's hallucination figures (0.37 / 0.28) confirmed in the experiments
-      before they are quoted in the post, or dropped
+- [x] Ollie's hallucination figures **confirmed** 2026-08-05: `tailoring-gpt-4.1-mini`
+      shows `fabrication_rate (avg) 0.14` and `hallucination_metric (avg) 0.37`
+      in the experiment header. Prompt v1 was 0.227 (`phase2_eval_report.md`).
+      Safe to quote as fact
+- [ ] Decide what to do about the trade the optimizer made: fabrication -54%,
+      hallucination +64%. Adding hallucination to the objective is the obvious
+      next optimizer run

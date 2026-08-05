@@ -84,6 +84,30 @@ deterministic thin-primary bench, no-op within noise when the primary is
 rich. Details + trade-off in `docs/optimizing_latency.md` (Phase 3
 addendum).
 
+## The cost of the optimizer win, found 2026-08-05
+
+The tailor prompt optimization is reported above as fabrication 0.309 -> 0.1423.
+That is true and it is half the story. The **same experiment**
+(`tailoring-gpt-4.1-mini`, 30 Jul, dataset `job-scout-tailoring-cases`) also
+carries a second feedback score we never wrote down:
+
+| metric | prompt v1 | prompt v2 (optimized) |
+|---|---|---|
+| `fabrication_rate` (our deterministic validator) | 0.309 | **0.14** |
+| `hallucination_metric` (Opik built-in judge) | 0.227 | **0.37** |
+
+Fabrication **-54%**, hallucination **+64%**, same 15 packs. The optimizer's
+objective was `1 - fabrication_rate`, so it optimized exactly what it was asked
+to and moved a metric nobody was watching.
+
+Plausible mechanism (hypothesis, not measured): "reword only from source" pushes
+the model into tighter paraphrase, and tight paraphrase is what the hallucination
+judge flags. **Next optimizer run should put both metrics in the objective.**
+
+Found because Ollie surfaced it; confirmed by opening the experiment header,
+where both scores sit side by side. The figure was in Opik the whole time — the
+gap was our own notes, not our telemetry.
+
 ## Contained, not repaired: the 15-second JSearch timeout
 
 Per-source spans (`traced_call`) exposed one on their first real run:
