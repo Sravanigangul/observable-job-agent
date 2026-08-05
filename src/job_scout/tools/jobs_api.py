@@ -329,21 +329,28 @@ def run_search(
 
     concurrent = get_settings().scout_concurrent_sources and len(fetchers) > 1
     pool: ThreadPoolExecutor | None = None
+    soft_deadline = get_settings().scout_source_soft_deadline if concurrent else None
     if concurrent:
         # Fire every live source at once; the cascade below decides what gets
         # consumed. copy_context keeps Opik tracer/cost contextvars intact in
-        # worker threads (same pattern as rank_jobs).
+        # worker threads (same pattern as rank_jobs) — without it the per-source
+        # spans above land outside the trace.
         pool = ThreadPoolExecutor(max_workers=len(fetchers))
         futures = {name: pool.submit(contextvars.copy_context().run, fn) for name, fn in fetchers.items()}
 
-        def fetch(name: str) -> list[JobPosting]:
+        def fetch(name: str, timeout: float | None = None) -> list[JobPosting]:
+            fut = futures.get(name)
+            if fut is None:
+                return []
             try:
-                return futures[name].result() if name in futures else []
+                return fut.result(timeout=timeout)
+            except TimeoutError:
+                return []
             except Exception:  # noqa: BLE001 - a dead source is an empty source
                 return []
     else:
 
-        def fetch(name: str) -> list[JobPosting]:
+        def fetch(name: str, timeout: float | None = None) -> list[JobPosting]:
             try:
                 return fetchers[name]() if name in fetchers else []
             except Exception:  # noqa: BLE001 - a dead source is an empty source
@@ -356,11 +363,19 @@ def run_search(
             jobs.extend(found)
 
     try:
-        add("jsearch", fetch("jsearch"))
+        # Phase 1: give jsearch a soft deadline; adzuna/remotive are already
+        # running and will usually be done by the time we look at them.
+        add("jsearch", fetch("jsearch", timeout=soft_deadline))
         if len(_dedupe(jobs)) < 5:
             add("adzuna", fetch("adzuna"))
         if remote or len(_dedupe(jobs)) < 5:
             add("remotive", fetch("remotive"))
+
+        # Phase 2: if we're still short AND jsearch hasn't been consumed yet,
+        # wait for it — it may be the only source with results today.
+        if len(_dedupe(jobs)) < 5 and "jsearch" not in used and concurrent:
+            add("jsearch", fetch("jsearch"))
+
         if len(_dedupe(jobs)) < 3:
             add("cache", cache.fetch(query, location, country, remote, limit))
     finally:

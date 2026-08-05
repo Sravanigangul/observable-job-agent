@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     scout_fetch_model: str = Field(default="", alias="SCOUT_FETCH_MODEL")
     scout_rank_batch: int = Field(default=4, alias="SCOUT_RANK_BATCH")
     scout_concurrent_sources: bool = Field(default=True, alias="SCOUT_CONCURRENT_SOURCES")
+    # 1.0s is measured, not guessed. The deadline is paid in full on every
+    # search (adzuna is already finished by ~1s, so wall clock == deadline),
+    # and jsearch has never once returned under 8s across every trace we have.
+    # So a longer deadline buys jsearch no real chance and bills us the
+    # difference. Phase 2 in run_search is what protects the results.
+    scout_source_soft_deadline: float = Field(
+        default=1.0,
+        alias="SCOUT_SOURCE_SOFT_DEADLINE",
+        description="Seconds to wait for the first concurrent source before falling through to faster ones.",
+    )
 
     fab_bullet_ratio: float = Field(default=0.65, alias="SCOUT_FAB_BULLET_RATIO")
     fab_skill_ratio: float = Field(default=0.85, alias="SCOUT_FAB_SKILL_RATIO")

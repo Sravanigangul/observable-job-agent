@@ -84,7 +84,7 @@ deterministic thin-primary bench, no-op within noise when the primary is
 rich. Details + trade-off in `docs/optimizing_latency.md` (Phase 3
 addendum).
 
-## Open, and deliberately so: the 15-second JSearch timeout
+## Contained, not repaired: the 15-second JSearch timeout
 
 Per-source spans (`traced_call`) exposed one on their first real run:
 `source.jsearch` spends **15.3s** — exactly its timeout — and returns **zero
@@ -93,16 +93,55 @@ jobs**, on every search. Reproduced three times directly (15 264 / 15 265 /
 every search pays that tax for a result the cascade then discards
 (`sources_used: ['adzuna']`).
 
-It is **not fixed here on purpose**: it is the subject of the Ollie codebase
-loop in [`ollie.md`](ollie.md) — diagnose from the trace, read `jobs_api.py`,
-propose `SCOUT_SOURCE_TIMEOUT`, rerun, verify against
-`job-scout-search-suite` (currently **33%**, red in exactly the right places).
-A shorter timeout also drops sources that are merely slow, which is a product
-decision rather than a bug fix.
+It was left open deliberately as the subject of the Ollie codebase loop in
+[`ollie.md`](ollie.md), and resolved there on 2026-08-05.
 
-**This must be resolved before `part3.0` ships.** Shipping a release with a
-known 15-second tax on every search would be indefensible, however good the
-demo is.
+**What JSearch actually does.** It is not uselessly slow, it is *unreliably*
+slow. On 2026-08-04 it burned 15.2s and returned `[]` while Adzuna carried the
+search; on 2026-08-05 it took 8.8s and was the **only** source that returned
+anything. A plain short timeout would have made the first day fast and the
+second day empty. Observed range across every trace we have: 8.8 / 9.0 / 11.8 /
+15.2 / 15.3 / 15.4 s. It has never once returned under 8s.
+
+**The fix (Ollie's design, our number).** A two-phase soft deadline in
+`run_search`, not a timeout. Phase 1 gives JSearch `SCOUT_SOURCE_SOFT_DEADLINE`
+and otherwise falls through to sources that are already finished; phase 2 goes
+back and waits for it in full if the cascade is still short and JSearch was
+never consumed. The HTTP timeout stays at 15s, and the cascade's consumption
+order and thresholds (5 / 5 / 3) are unchanged. `pool.shutdown(wait=False)` was
+already in place, so the abandoned future does not block the return.
+
+Ollie proposed a default of `5.0`. Measurement rejected it: the deadline is
+paid in full on every search (wall clock == deadline for any value above ~1s,
+because Adzuna is finished by then), and no value under 8s ever gives JSearch a
+chance to win. Default is **1.0s**, with the reasoning recorded in `config.py`.
+
+**Measured, paired, same process, deadline as the only variable:**
+
+| search | before | after | jobs |
+|---|---|---|---|
+| "data scientist", Berlin | 16 109 ms | **1 103 ms** | 10 → 10 |
+| "machine learning engineer", remote US | 15 325 ms | **1 005 ms** | 10 → 10 |
+
+**`job-scout-search-suite`, before → after:**
+
+| assertion | before | after |
+|---|---|---|
+| no source over 8000 ms | 33% | 33% |
+| every used source contributed ≥1 job | 67% | **100%** |
+| search returned ≥1 job | 100% | 100% |
+| **suite pass rate** | **33%** | **33%** |
+
+The suite pass rate not moving is **correct, not a gap in the fix**. Assertion 1
+measures raw per-source latency (`source_timings` calls each adapter directly,
+outside `run_search`), and nothing here made JSearch faster. Assertion 2 went
+green because JSearch no longer lands in `sources_used` having contributed
+nothing. The search is 14x faster and the source is still slow; the gate can
+tell those apart because it was written before the fix.
+
+**Still open:** JSearch itself. Containing it is not repairing it. Worth
+revisiting whether the adapter's query shape is what makes it slow, or whether
+it should be demoted below Adzuna in the cascade entirely.
 
 ## Weakness-by-weakness status
 

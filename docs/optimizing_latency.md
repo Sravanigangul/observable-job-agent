@@ -120,3 +120,49 @@ uses injected sources instead of network luck.
 Trade-off, stated plainly: concurrent mode queries lower-priority sources
 whose results may go unused, spending Adzuna/Remotive quota to buy latency.
 `SCOUT_CONCURRENT_SOURCES=false` restores the frugal sequential cascade.
+
+## The soft deadline (`SCOUT_SOURCE_SOFT_DEADLINE`, default 1.0s)
+
+Firing the sources together collapsed the *stacked* waits, but the cascade
+still consumed them in priority order, so the search remained hostage to
+whatever JSearch was doing — 8.8s on a good day, 15.4s on a bad one, and on
+2026-08-04 it spent 15.2s to return `[]` while Adzuna carried the whole result.
+
+Proposed by Opik's assistant from the per-source spans (see
+[`ollie.md`](ollie.md)), in two phases so the primary is bounded without being
+dropped:
+
+1. wait at most `SCOUT_SOURCE_SOFT_DEADLINE` for JSearch, then fall through to
+   the sources that have already finished
+2. if the cascade is *still* short and JSearch was never consumed, wait for it
+   in full — on 2026-08-05 it was the only source that returned anything
+
+Consumption order and the <5/<3 thresholds are unchanged, the HTTP timeout stays
+at 15s, and sequential mode is untouched (the deadline only exists when there is
+something else already in flight).
+
+Measured live, paired, same process, deadline as the only variable:
+
+| search | blocking | 1.0s deadline | jobs |
+|---|---|---|---|
+| "data scientist", Berlin | 16 109 ms | **1 103 ms** | 10 → 10 |
+| "machine learning engineer", remote US | 15 325 ms | **1 005 ms** | 10 → 10 |
+
+**Why 1.0 and not the 5.0 originally proposed.** The deadline is paid in full on
+essentially every search, because Adzuna is finished by ~1s:
+
+| deadline | wall clock | jobs |
+|---|---|---|
+| 1.0s | 1 007 ms | 10 |
+| 2.0s | 2 020 ms | 10 |
+| 5.0s | 5 013 ms | 10 |
+
+Since JSearch has never once returned under 8s, no value in that range gives it
+a chance to win; it only bills the user the difference. Phase 2 is what protects
+the results, so the deadline should be as small as is still useful.
+
+Trade-off, stated plainly: on a day when JSearch is both fast *and* the only
+source with jobs, this pays `deadline + jsearch` instead of `jsearch`. That is a
+1s tax on the rare good day to avoid a 15s tax on the common bad one. It also
+does not make JSearch faster — `job-scout-search-suite` still fails its
+"no source over 8s" assertion, correctly.

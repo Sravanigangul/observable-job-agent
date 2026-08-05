@@ -30,11 +30,16 @@ source, so **every search pays a 15-second tax for a discarded result**.
 The old instrumentation would have said "search took 15 seconds" and sent you
 to look at the ranking prompt.
 
-**It is deliberately unfixed.** Not an oversight — it is the subject of the
-demo below, and it is a genuine product decision (a shorter timeout drops
-sources that are merely slow), which is exactly the kind of decision Ollie is
-built to walk you through. **It must be fixed before `part3.0` ships**; see the
-release checklist at the end.
+**It was deliberately left unfixed** until the session below, because it is a
+genuine product decision rather than a one-line bug: a short timeout drops
+sources that are merely slow, and JSearch is *sometimes the only source that
+returns anything*. That is exactly the kind of decision Ollie is built to walk
+you through, and the constraint you should hand it explicitly.
+
+Resolved 2026-08-05 with a two-phase soft deadline: **16 109 ms → 1 103 ms**
+paired, same 10 jobs. The search suite stayed at 33%, correctly — see the
+release checklist at the end and
+[`phase3_findings.md`](phase3_findings.md).
 
 ## Connecting the repository
 
@@ -98,14 +103,31 @@ not know, and this is the moment to find that out — while it is cheap.
 > "Propose a change that stops one slow source holding up the whole search.
 > Keep the cascade's consumption order and thresholds unchanged."
 
-The shape we expect is a `SCOUT_SOURCE_TIMEOUT` setting threaded through the
-three adapters, defaulting well under 15s. Judge the answer against
+Add the constraint that makes this hard, because it is real: on 2026-08-05
+JSearch was the *only* source that returned anything. Say so, and add **"do not
+edit anything yet, just show me the diff you would make."**
+
+We expected a `SCOUT_SOURCE_TIMEOUT` threaded through the three adapters. What
+it proposed was better: a **two-phase soft deadline** in `run_search` (phase 1
+bounds the wait and falls through to finished sources, phase 2 goes back and
+waits for JSearch in full if the cascade is still short and JSearch was never
+consumed). Judge any answer against
 [`optimizing_latency.md`](optimizing_latency.md), which records what was
 already tried, what worked, and one honest failure — an assistant that
 proposes something already measured and rejected is worth catching.
 
-Approve the write only when you have read the diff. Ollie edits your working
-tree; `git diff` is the review.
+Approve the write only when you have read the diff, and click **"Allow once"**
+rather than "Always allow" — the latter quietly ends the review. Ollie edits
+your working tree; `git diff` is the real review. Two things it got wrong that
+only the human pass caught, both recorded in
+[`phase3_findings.md`](phase3_findings.md):
+
+- it **deleted the comment** explaining why `copy_context` wraps each worker
+  thread, which is the line keeping Opik's tracer alive inside the pool and
+  therefore the reason the per-source spans exist at all
+- its default of `5.0s` was **unmeasured**. The deadline is paid in full on
+  every search, and JSearch has never returned under 8s, so 5s buys it no
+  chance and costs the user 5 seconds. Measured default: `1.0s`
 
 ### 4. Rerunning and verifying
 
@@ -282,10 +304,14 @@ resolves faster than clicking around.
 
 ## Release checklist
 
-- [ ] The JSearch timeout is fixed (via Ollie on camera, or by hand if the
-      demo does not land) — **do not ship `part3.0` with a known 15s tax**
-- [ ] `job-scout-search-suite` green after the fix, with both runs kept for the
-      before/after screenshot
-- [ ] `docs/phase3_findings.md` updated with the measured after-number
+- [x] The JSearch tax is contained via Ollie (2026-08-05): two-phase soft
+      deadline, 16 109 ms → 1 103 ms paired, same 10 jobs, 226 tests green
+- [x] `job-scout-search-suite` re-run after the fix: **33% → 33%**, and that is
+      the correct answer. Assertion 2 went 67% → 100%; assertion 1 still fails
+      because JSearch is still a 15-second source. Both runs are in Opik under
+      `search-suite-gate` for the before/after screenshot
+- [x] `docs/phase3_findings.md` updated with the measured after-numbers
+- [ ] JSearch itself is still slow. Containing is not repairing — decide before
+      `part3.0` whether to demote it below Adzuna in the cascade
 - [ ] Ollie's hallucination figures (0.37 / 0.28) confirmed in the experiments
       before they are quoted in the post, or dropped
