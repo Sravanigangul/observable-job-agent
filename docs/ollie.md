@@ -300,58 +300,73 @@ Ask 9 before you ask anything you cannot check. If it gets a number you already
 know wrong, that is worth far more than a correct answer to a question you had
 to take on faith.
 
-## Screenshot shot-list
+## Screenshot shot-list for the Part 3 post
 
-For the Part 3 post. Each needs a logged-in Comet on the `job-scout` project.
+Ten image slots in the draft. Three are diagrams we render ourselves and are
+ready to use; the rest are live Opik captures.
 
-**The draft only calls for three of these: O1, O6 and O10.** The rest are
-optional depth for `docs/`, not blog slots.
+**Capture rule, learned the hard way.** Substack renders every image at 728 CSS
+pixels wide. A full browser window captured on a 1x display puts Opik's ~11px
+interface text at roughly 5px on screen, which reads as a grey smudge and makes
+the shot decorative rather than evidential. So:
 
-**O1 is already shot.** The exact trace, verified 2026-08-05 to be the one the
-post's opening code block quotes (`source.jsearch` 15.4s, `source.adzuna` 0.9s,
-`source.remotive` 0.2s, `sources_used: ["adzuna"]`):
+1. Put the browser on a **Retina (2x) display**, not an external 1x monitor
+2. Use **Cmd-Shift-4** and drag a region, which writes a true 2x PNG
+3. **Crop tight to the rows that carry the claim.** Never the whole window.
+   Roughly 900px of captured width is the ceiling before the text gets too small
+4. Save as PNG, not GIF. GIF is 256 colours and turns antialiased text to mush
+
+### Ready to paste (rendered at 2x, authored for the width)
+
+| slot | file | what it is |
+|---|---|---|
+| D1 | `blog/images/D1_journey_part3.jpg` | four-part journey map, arrow under Part 3 |
+| D6 | `blog/images/D6_ollie_loop.jpg` | the six-step loop, coral card is the human gate |
+| D5 | `blog/images/D7_numbers.jpg` | the Phase 3 measurements card |
+
+### Needs capturing
+
+| slot | shot | click path | crop to |
+|---|---|---|---|
+| O-intro | The Ollie panel open beside a trace | any trace → owl icon, top right | the panel, from its header down to the message box |
+| O1 | Span tree, `source.jsearch` 15.4s dwarfing the rest | trace `019fcb21-c8ce-7d21-b8e4-53a1dcedc333` (see URL below) | the four `source.*` rows only |
+| O5 | Ollie's reply after approving edits | the conversation with `connect_edit – Approved` | from the approval rows down to "All 24 tests pass" |
+| O6 | **The pending approval card** | ask for a trivial edit, shoot **before** clicking, then Deny | the diff plus the three buttons |
+| O7 | Both gate runs at 33% | **Experiments** | the table rows, both `33%` pills visible |
+| O10 | The "how can I improve my agent?" report | Ollie panel | the reply, from the question down to item 5 |
+| O11 | `fabrication_rate 0.14` beside `hallucination_metric 0.37` | **Experiments** → `tailoring-gpt-4.1-mini` | the header strip with both scores |
+| logo | The Opik logo block | reuse Part 2's | n/a |
+
+The O1 trace, verified to be the one the post's code block quotes:
 
 ```
 https://www.comet.com/opik/shirin-4590/projects/019f5bf7-e5c8-73dd-b739-dc2c9af67762/logs?traces_search=concurrent&trace=019fcb21-c8ce-7d21-b8e4-53a1dcedc333
 ```
 
-Collapse the Ollie panel first (the `»` at the panel's top-left), or it eats a
-third of the frame.
+Collapse the Ollie panel before shooting it, or it eats a third of the frame.
 
-**O6 is still unshot, and is the most valuable missing image.** The original
-conversation's cards now read "Approved", and a re-shoot attempt on 2026-08-05
-failed on the Ollie credit limit, not the bridge (which paired fine). When
-credits are back:
+### O6 needs a live bridge and spare credits
+
+It is the most valuable missing image, because the post's whole safety argument
+rests on that dialog. A re-shoot attempt on 2026-08-05 failed on the Ollie
+**credit limit**, not the bridge, which had paired fine. When credits are back:
 
 1. `uv run opik connect --project job-scout`, open the pairing link
-2. Ask for something trivial and reversible — *"add a one-line comment above the
-   JSearchSource class saying its 15s timeout is deliberate"*
-3. Screenshot the card **before** clicking. The three buttons
-   ("Always allow" / "Allow once" / "Deny") are the actual subject, because the
-   post's argument is that the first one quietly ends the review
+2. Ask for something trivial and reversible, e.g. *"add a one-line comment above
+   the JSearchSource class saying its 15s timeout is deliberate"*
+3. Screenshot the card **before** clicking. The three buttons are the subject
 4. Click **Deny**. The image is the point; the edit is not
 
-Crop tight and box the buttons — a full-window capture renders at 728px in
-Substack, which puts 11px UI text at about 5px and makes the shot decorative
-rather than evidential.
+### Highlight boxes
 
-| # | Shot | Click path |
-|---|------|------------|
-| O1 | Span tree with `source.*` children, durations visible | **Traces** → a search trace → expand the span tree |
-| O2 | Ollie naming the slow source | same trace → Ollie panel → question 1 |
-| O3 | Ollie on "did it contribute anything" | same panel, question 2 — capture the answer citing `sources_used` |
-| O4 | The `source.jsearch` span detail: 15s + metadata | click the span → right-hand detail pane |
-| O5 | Ollie reading `jobs_api.py` | with `opik connect` running, capability 2 |
-| O6 | The proposed diff, awaiting approval | capability 3 — the approval prompt is the shot |
-| O7 | Search suite red, then green | **Test suites** → `job-scout-search-suite` → the two runs side by side |
-| O8 | Prompt library version history | **Prompts** → `tailor` → versions |
-| O9 | Cross-workspace answer | Ollie panel, capability 5 |
-| O10 | The "how can I improve my agent?" report, with its chart | Ollie panel, ask 1 — the scorecard beside it is the point |
-| O11 | The Agent Playground running the agent | after ask 5 lands the entrypoint |
+The three number-carrying shots (O1, O7, O11) read far faster with a coral box
+around the number the sentence is about. Colour `#C0392B`, 5px, to match the
+human-gate card in D6. Box the `source.jsearch` row, both `33%` pills, and
+`hallucination_metric 0.37` respectively, and leave the neighbouring numbers
+unboxed so the contrast does the arguing.
 
 Opik's UI ships weekly; if a path has moved, `comet.com/docs/opik/llms.txt`
 resolves faster than clicking around.
-
 ## Release checklist
 
 - [x] The JSearch tax is contained via Ollie (2026-08-05): two-phase soft
