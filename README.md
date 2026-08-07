@@ -26,12 +26,13 @@ Every part ships as a GitHub release, so the code you clone matches the post you
 | Part | Focus | Blog post | Code release |
 |------|-------|-----------|--------------|
 | **1** | **Build** | [Build your own Job Agent - Part 1](https://jamwithai.substack.com/p/build-your-own-job-agent-part-1) | [`part1.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part1.0) |
-| **2 (this release)** | **Extend, then evaluate** | [Build your own Job Agent - Part 2](https://jamwithai.substack.com/p/build-your-own-job-agent-part-2) | [`part2.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part2.0) |
-| 3 | Self-improve | coming soon | coming soon |
+| **2** | **Extend, then evaluate** | [Build your own Job Agent - Part 2](https://jamwithai.substack.com/p/build-your-own-job-agent-part-2) | [`part2.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part2.0) |
+| **3 (this release)** | **Self-improve, with receipts** | [Build your own Job Agent - Part 3](https://jamwithai.substack.com/p/build-your-own-job-agent-part-3) | [`part3.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part3.0) |
+| 4 | Speak | coming soon | coming soon |
 
 ```bash
 # 📥 Clone the release that matches the part you are reading:
-git clone --branch part2.0 https://github.com/jamwithai/observable-job-agent
+git clone --branch part3.0 https://github.com/jamwithai/observable-job-agent
 ```
 
 ## 🚀 Quick start
@@ -39,7 +40,7 @@ git clone --branch part2.0 https://github.com/jamwithai/observable-job-agent
 Prerequisites: **Python 3.12+** and **[uv](https://docs.astral.sh/uv/getting-started/installation/)**.
 
 ```bash
-git clone --branch part2.0 https://github.com/jamwithai/observable-job-agent
+git clone --branch part3.0 https://github.com/jamwithai/observable-job-agent
 cd observable-job-agent
 uv sync --all-groups
 cp .env.example .env    # add one LLM key (see below)
@@ -56,6 +57,7 @@ The app remembers your CV and chosen locations between runs ("Start over" forget
 
 ## 📓 Interactive tutorials
 
+- [`notebooks/phase3_ollie.ipynb`](notebooks/phase3_ollie.ipynb): per-source timing, the same search with the fan-out on and off, and the assistant walkthrough with what to check each answer against
 - [`notebooks/phase2_evaluation.ipynb`](notebooks/phase2_evaluation.ipynb): the tailoring walkthrough, the stale-checkpoint bug live, datasets and eval suites (cost printed before every spend)
 - [`notebooks/phase1_walkthrough.ipynb`](notebooks/phase1_walkthrough.ipynb): the search agent end to end, reading your first trace
 
@@ -68,6 +70,9 @@ The app remembers your CV and chosen locations between runs ("Start over" forget
 - **Grounded tailoring**: your CV becomes a typed corpus; every rewritten bullet carries a `corpus_ref` back to the real item
 - **A deterministic fabrication validator**: zero LLM calls, tunable thresholds (`SCOUT_FAB_*`), every report records the values it ran with
 - **PDF rendering with a degradation contract**: LaTeX via tectonic, falls back to `.tex` + Overleaf, never fails a run
+- **Per-source spans**: each job site is timed separately, so a slow search names the culprit instead of the total
+- **A pipeline regression suite**: `job-scout-search-suite` grades the cascade (no source over 8s, every source used contributed, the search returned something)
+- **A prompt tuned against a deterministic check**, not an LLM judge: fabrication 0.2768 to 0.1288 on fresh live jobs
 - **The full eval stack in Opik**: datasets from your own traces, experiments, LLM judges, an annotation queue, and judge-vs-human calibration
 
 Stack: LangGraph, LangChain, Opik, Gradio, Pydantic, httpx + pypdf.
@@ -125,6 +130,8 @@ make batch         # Part 1 baseline batch (prints projected cost first)
 make tailor-batch  # Part 2 tailoring batch
 make eval-datasets # push ranking + tailoring datasets to Opik from traces
 make evals         # eval harness (extraction/ranking/tailoring/trajectory/calibration)
+make gates         # deterministic regression gate (no LLM calls)
+make search-bench  # paired before/after source timing
 make queue         # create the Opik annotation queue
 make lint          # ruff
 ```

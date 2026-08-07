@@ -5,9 +5,10 @@ Every bullet, skill, and claim in a tailored application must trace back to a
 official LinkedIn data-export ZIP (Settings → "Get a copy of your data").
 
 Segmentation is a deliberately simple line/keyword heuristic — no NLP
-libraries. It will mis-classify the odd line on unusual CV layouts; that is an
-accepted, documented limitation (findings material, not a bug to engineer
-away).
+libraries. Phase 3 taught it two tricks the Phase 2 findings demanded
+(re-joining PDF-wrapped lines; recognizing "Technical Skills"-style headings)
+but it remains a heuristic: unusual CV layouts can still mis-classify the odd
+line, and that stays a documented limitation rather than an engineering quest.
 
 Privacy: a user's LinkedIn export contains personal data. This module only ever
 receives a filesystem *path*; the ZIP is never committed, logged, or attached
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import zipfile
 from pathlib import Path
 from typing import Literal
@@ -34,8 +36,14 @@ CorpusSource = Literal["cv", "linkedin"]
 _SUMMARY_HEADINGS = {"summary", "profile", "about", "objective", "zusammenfassung", "profil"}
 _SKILL_HEADINGS = {"skills", "kenntnisse", "technologies", "tools", "competencies", "skills & tools"}
 _EDUCATION_HEADINGS = {"education", "ausbildung", "bildung", "studium"}
+# A heading containing any of these words is a skills section even when it is
+# not an exact match ("Technical Skills", "Tech Stack", "Skills & Tools").
+_SKILL_HEADING_WORDS = {"skills", "skill", "kenntnisse", "technologies", "tools", "competencies", "stack"}
 
 _BULLET_GLYPHS = ("-", "•", "*", "–", "◦")
+_TERMINAL_PUNCT = (".", "!", "?", ":", ";")
+_PHONEISH = re.compile(r"\+?\d[\d\s().\-/]{6,}")
+_PIPES = re.compile(r"\s*\|\s*")
 
 # LinkedIn export files we understand. Official exports vary by account and
 # region; every file is optional and anything missing is silently skipped.
@@ -92,11 +100,40 @@ def _section_kind(heading: str) -> CorpusKind:
     lowered = heading.lower().strip(" :")
     if lowered in _SUMMARY_HEADINGS:
         return "summary"
-    if lowered in _SKILL_HEADINGS:
-        return "skill"
     if lowered in _EDUCATION_HEADINGS:
         return "education"
+    if lowered in _SKILL_HEADINGS or any(word.strip("&/") in _SKILL_HEADING_WORDS for word in lowered.split()):
+        return "skill"
     return "bullet"
+
+
+def _logical_lines(cv_text: str) -> list[str]:
+    """Re-join PDF-wrapped lines into logical ones.
+
+    A line continues the previous one when that previous line ends mid-sentence
+    (no terminal punctuation) and the new line reads as a continuation: it does
+    not open a bullet, does not look like a heading, and either the previous
+    line ends with a comma or the new line starts lowercase. Blank lines are
+    hard barriers, so paragraphs never merge across them.
+    """
+    lines: list[str] = []
+    for raw in cv_text.splitlines():
+        line = raw.strip()
+        if not line:
+            lines.append("")
+            continue
+        prev = lines[-1] if lines else ""
+        if (
+            prev
+            and not prev.endswith(_TERMINAL_PUNCT)
+            and not line.startswith(_BULLET_GLYPHS)
+            and not _looks_like_heading(line)
+            and (prev.endswith(",") or line[:1].islower())
+        ):
+            lines[-1] = f"{prev} {line}"
+        else:
+            lines.append(line)
+    return [line for line in lines if line]
 
 
 def _segment_cv(cv_text: str) -> list[CorpusItem]:
@@ -121,13 +158,13 @@ def _segment_cv(cv_text: str) -> list[CorpusItem]:
             )
         )
 
-    for raw_line in cv_text.splitlines():
-        line = raw_line.strip()
-        if not line:
+    for line in _logical_lines(cv_text):
+        # Contact/header noise: emails, and pipe rows that read as contact
+        # details (phone numbers, profile links). Pipe rows that carry real
+        # content survive with the pipes turned into commas.
+        if "@" in line or ("|" in line and (_PHONEISH.search(line) or "linkedin.com" in line.lower())):
             continue
-        # Contact/header noise: emails, pipes-separated contact rows.
-        if "@" in line or "|" in line:
-            continue
+        line = _PIPES.sub(", ", line)
         if _looks_like_heading(line):
             section = line
             kind = _section_kind(line)

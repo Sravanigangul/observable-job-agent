@@ -5,15 +5,23 @@ merges their results:
 
     JSearch → Adzuna → Remotive → committed cache
 
-Each adapter is tried only if the ones before it returned too few jobs, so a
-reader with no API keys still gets results from the offline cache. No scraping
+The CONSUMPTION policy is a cascade: a source's results are only merged in when
+the higher-priority sources returned too few jobs, so a reader with no API keys
+still gets results from the offline cache. Since Phase 3 the live sources are
+QUERIED concurrently (``SCOUT_CONCURRENT_SOURCES``, default on): the sequential
+fallback used to stack network waits exactly when results were thinnest (the
+"failing forward" 3s documented in docs/optimizing_latency.md). Consumption
+order and thresholds are unchanged — only the waiting overlaps. No scraping
 sources are included (see ``docs/extending_sources.md``).
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
@@ -81,6 +89,10 @@ class JSearchSource:
     name = "jsearch"
     BASE = "https://api.openwebninja.com/jsearch/search-v2"
 
+    # NOTE: this 15.0s default is the subject of the Ollie demo in docs/ollie.md
+    # — measured spending its full timeout for zero jobs on every search, and
+    # left in place deliberately so the codebase loop has a real bug to fix.
+    # Do not quietly change it; see the release checklist in that doc.
     def __init__(self, api_key: str = "", timeout: float = 15.0) -> None:
         self.api_key = api_key or get_settings().jsearch_api_key.get_secret_value()
         self.timeout = timeout
@@ -298,20 +310,77 @@ def run_search(
     jobs: list[JobPosting] = []
     used: list[str] = []
 
+    # One span per source, so the trace answers "which source was slow" instead
+    # of only "the search took 3 seconds" — the difference between diagnosing
+    # the waterfall and guessing at it. See docs/ollie.md.
+    #
+    # Imported here, not at module scope: job_scout.tracing pulls in the graph,
+    # which imports this module back (the pre-existing cold-import cycle).
+    from job_scout.tracing import traced_call
+
+    def _spanned(name: str, fn: Callable[[], list[JobPosting]]) -> Callable[[], list[JobPosting]]:
+        return traced_call(f"source.{name}", fn, metadata={"source": name, "query": query, "location": location or ""})
+
+    fetchers: dict[str, Callable[[], list[JobPosting]]] = {}
+    if jsearch.available:
+        fetchers["jsearch"] = _spanned("jsearch", lambda: jsearch.fetch(query, location, country, remote, limit))
+    fetchers["adzuna"] = _spanned("adzuna", lambda: adzuna.fetch(query, location, country, remote, limit))
+    fetchers["remotive"] = _spanned("remotive", lambda: remotive.fetch(query, location, country, remote, limit))
+
+    concurrent = get_settings().scout_concurrent_sources and len(fetchers) > 1
+    pool: ThreadPoolExecutor | None = None
+    soft_deadline = get_settings().scout_source_soft_deadline if concurrent else None
+    if concurrent:
+        # Fire every live source at once; the cascade below decides what gets
+        # consumed. copy_context keeps Opik tracer/cost contextvars intact in
+        # worker threads (same pattern as rank_jobs) — without it the per-source
+        # spans above land outside the trace.
+        pool = ThreadPoolExecutor(max_workers=len(fetchers))
+        futures = {name: pool.submit(contextvars.copy_context().run, fn) for name, fn in fetchers.items()}
+
+        def fetch(name: str, timeout: float | None = None) -> list[JobPosting]:
+            fut = futures.get(name)
+            if fut is None:
+                return []
+            try:
+                return fut.result(timeout=timeout)
+            except TimeoutError:
+                return []
+            except Exception:  # noqa: BLE001 - a dead source is an empty source
+                return []
+    else:
+
+        def fetch(name: str, timeout: float | None = None) -> list[JobPosting]:
+            try:
+                return fetchers[name]() if name in fetchers else []
+            except Exception:  # noqa: BLE001 - a dead source is an empty source
+                return []
+
     def add(source_name: str, found: list[JobPosting]) -> None:
         """Record a source's results if it returned any."""
         if found:
             used.append(source_name)
             jobs.extend(found)
 
-    if jsearch.available:
-        add("jsearch", jsearch.fetch(query, location, country, remote, limit))
-    if len(_dedupe(jobs)) < 5:
-        add("adzuna", adzuna.fetch(query, location, country, remote, limit))
-    if remote or len(_dedupe(jobs)) < 5:
-        add("remotive", remotive.fetch(query, location, country, remote, limit))
-    if len(_dedupe(jobs)) < 3:
-        add("cache", cache.fetch(query, location, country, remote, limit))
+    try:
+        # Phase 1: give jsearch a soft deadline; adzuna/remotive are already
+        # running and will usually be done by the time we look at them.
+        add("jsearch", fetch("jsearch", timeout=soft_deadline))
+        if len(_dedupe(jobs)) < 5:
+            add("adzuna", fetch("adzuna"))
+        if remote or len(_dedupe(jobs)) < 5:
+            add("remotive", fetch("remotive"))
+
+        # Phase 2: if we're still short AND jsearch hasn't been consumed yet,
+        # wait for it — it may be the only source with results today.
+        if len(_dedupe(jobs)) < 5 and "jsearch" not in used and concurrent:
+            add("jsearch", fetch("jsearch"))
+
+        if len(_dedupe(jobs)) < 3:
+            add("cache", cache.fetch(query, location, country, remote, limit))
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=False)
 
     return _dedupe(jobs)[:limit], used
 

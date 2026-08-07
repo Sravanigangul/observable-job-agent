@@ -45,11 +45,23 @@ class Settings(BaseSettings):
 
     tavily_api_key: SecretStr = Field(default=SecretStr(""), alias="TAVILY_API_KEY")
 
+
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
     scout_max_jobs: int = Field(default=10, alias="SCOUT_MAX_JOBS")
     scout_max_reformulations: int = Field(default=2, alias="SCOUT_MAX_REFORMULATIONS")
     scout_fetch_model: str = Field(default="", alias="SCOUT_FETCH_MODEL")
     scout_rank_batch: int = Field(default=4, alias="SCOUT_RANK_BATCH")
+    scout_concurrent_sources: bool = Field(default=True, alias="SCOUT_CONCURRENT_SOURCES")
+    # 1.0s is measured, not guessed. The deadline is paid in full on every
+    # search (adzuna is already finished by ~1s, so wall clock == deadline),
+    # and jsearch has never once returned under 8s across every trace we have.
+    # So a longer deadline buys jsearch no real chance and bills us the
+    # difference. Phase 2 in run_search is what protects the results.
+    scout_source_soft_deadline: float = Field(
+        default=1.0,
+        alias="SCOUT_SOURCE_SOFT_DEADLINE",
+        description="Seconds to wait for the first concurrent source before falling through to faster ones.",
+    )
 
     fab_bullet_ratio: float = Field(default=0.65, alias="SCOUT_FAB_BULLET_RATIO")
     fab_skill_ratio: float = Field(default=0.85, alias="SCOUT_FAB_SKILL_RATIO")
@@ -95,6 +107,7 @@ class Settings(BaseSettings):
     def has_opik(self) -> bool:
         """Whether Opik tracing is enabled and has an API key."""
         return self.opik_enabled and bool(self.opik_api_key.get_secret_value())
+
 
 
 @lru_cache(maxsize=1)

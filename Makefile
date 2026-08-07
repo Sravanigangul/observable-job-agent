@@ -58,3 +58,11 @@ lint: ## Lint with ruff
 format: ## Format with ruff
 	uv run ruff format .
 	uv run ruff check --fix .
+
+.PHONY: gates
+gates: ## Deterministic eval regression gate (Opik dataset access, zero LLM calls)
+	uv run pytest gates/ -v
+
+.PHONY: search-bench
+search-bench: ## Paired soft-deadline benchmark (live job APIs, no LLM calls)
+	uv run python scripts/bench_search.py

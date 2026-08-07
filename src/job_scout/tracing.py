@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import subprocess
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,25 @@ def get_tracer(thread_id: str, tags: list[str], metadata: dict[str, Any] | None 
         thread_id=thread_id,
         project_name=settings.opik_project_name,
     )
+
+
+def traced_call[T](name: str, fn: Callable[[], T], metadata: dict[str, Any] | None = None) -> Callable[[], T]:
+    """Give ``fn`` its own span, named, or hand it back untouched.
+
+    A trace that shows only the total search time cannot answer "which source
+    was slow" — which is the first question anybody (Ollie included) asks of a
+    waterfall. One span per source turns that guess into a reading.
+
+    Untouched when tracing is off, deliberately: ``opik.track`` still tries to
+    ship spans without an API key and answers 401 into the reader's terminal.
+    Wrapping only when configured keeps the keyless path silent, which is the
+    same promise the rest of this module makes.
+    """
+    if not configure_opik():
+        return fn
+    import opik
+
+    return opik.track(name=name, type="tool", metadata=metadata, capture_input=False)(fn)
 
 
 def trace_graph(compiled_graph, tracer):
