@@ -56,3 +56,16 @@ def load_candidate() -> StoredCandidate | None:
 def clear_candidate() -> None:
     """Forget the stored candidate (the wizard's "start over")."""
     _STORE_PATH.unlink(missing_ok=True)
+
+
+def effective_profile(profile: Profile, preferences: dict | None) -> Profile:
+    """The profile the SEARCH sees: extraction fields overridden by the human's choice.
+
+    The stored profile stays untouched — it is what the extractor measured and
+    what evaluation grades. Only the search runs on the chosen locations.
+    """
+    if not preferences:
+        return profile
+    return profile.model_copy(
+        update={"locations": list(preferences.get("locations") or []), "remote_ok": bool(preferences.get("remote"))}
+    )
