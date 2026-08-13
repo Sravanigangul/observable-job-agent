@@ -39,7 +39,7 @@ Every part ships as a GitHub release, so the code you clone matches the post you
 | **1** | **Build** | [Build your own Job Agent - Part 1](https://jamwithai.substack.com/p/build-your-own-job-agent-part-1) | [`part1.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part1.0) |
 | **2** | **Extend, then evaluate** | [Build your own Job Agent - Part 2](https://jamwithai.substack.com/p/build-your-own-job-agent-part-2) | [`part2.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part2.0) |
 | **3** | **Self-improve, with receipts** | [Build your own Job Agent - Part 3](https://jamwithai.substack.com/p/build-your-own-job-agent-part-3) | [`part3.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part3.0) |
-| **4 (this release)** | **Speak** | coming soon | [`part4.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part4.0) |
+| **4 (this release)** | **Speak** | [Build your own voice agent](https://jamwithai.substack.com/p/build-your-own-voice-agent) | [`part4.0`](https://github.com/jamwithai/observable-job-agent/releases/tag/part4.0) |
 
 ```bash
 # 📥 Clone the release that matches the part you are reading:
