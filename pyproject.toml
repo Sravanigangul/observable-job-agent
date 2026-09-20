@@ -24,6 +24,7 @@ dependencies = [
     "jinja2>=3.1",
     "pyyaml>=6",
     "langchain-ollama>=1.1.0",
+    "typesafe-sdk>=0.7.0",
 ]
 
 [dependency-groups]
