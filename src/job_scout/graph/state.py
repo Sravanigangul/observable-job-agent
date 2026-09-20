@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from job_scout.graph.schemas import FabricationReport, JobPosting, Profile, RankedJob, TailoringPack
+from job_scout.graph.schemas import FabricationReport, JobPosting, Profile, RankedJob, TailoringPack, JevJobDecision
 
 
 class AgentState(TypedDict, total=False):
@@ -27,6 +27,7 @@ class AgentState(TypedDict, total=False):
     search_query: str | None
     jobs: list[JobPosting]
     ranked_jobs: list[RankedJob]
+    jev_decisions: list[JevJobDecision]
     reformulation_count: int
     llm_calls: int
     errors: list[str]

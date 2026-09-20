@@ -42,6 +42,7 @@ from langgraph.graph import END, START, StateGraph
 
 from job_scout.graph.nodes.fetch_jobs import fetch_jobs
 from job_scout.graph.nodes.rank_jobs import rank_jobs
+from job_scout.graph.nodes.jev_gate import jev_gate
 from job_scout.graph.nodes.reformulate_query import reformulate_query
 from job_scout.graph.nodes.tailor import tailor
 from job_scout.graph.nodes.validate_tailoring import validate_tailoring
@@ -60,6 +61,7 @@ _CHECKPOINT_TYPES = [
         "Profile",
         "JobPosting",
         "RankedJob",
+        "JevJobDecision",
         "TailoredBullet",
         "ExperienceEntry",
         "CVContent",
@@ -110,13 +112,15 @@ def build_graph(checkpointer: MemorySaver | None = None):
     """Build and compile the job-finding graph (starts from the profile input)."""
     builder = StateGraph(AgentState)
     builder.add_node("fetch_jobs", fetch_jobs)
+    builder.add_node("jev_gate", jev_gate)
     builder.add_node("rank_jobs", rank_jobs)
     builder.add_node("reformulate_query", reformulate_query)
     builder.add_node("tailor", tailor)
     builder.add_node("validate_tailoring", validate_tailoring)
 
     builder.add_conditional_edges(START, route_entry, ["fetch_jobs", "tailor"])
-    builder.add_edge("fetch_jobs", "rank_jobs")
+    builder.add_edge("fetch_jobs", "jev_gate")
+    builder.add_edge("jev_gate", "rank_jobs")
     builder.add_conditional_edges("rank_jobs", should_reformulate, ["reformulate_query", END])
     builder.add_edge("reformulate_query", "fetch_jobs")
     builder.add_edge("tailor", "validate_tailoring")

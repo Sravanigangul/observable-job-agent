@@ -64,6 +64,15 @@ class JobScores(BaseModel):
 
     scores: list[JobScore]
 
+class JevJobDecision(BaseModel):
+    """Jev's decision for one job posting."""
+
+    job_id: str
+    raw_choice: Literal["apply", "review", "skip"]
+    final_decision: Literal["apply", "review", "skip"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    probabilities: dict[str, float] = Field(default_factory=dict)
+
 
 class RankedJob(BaseModel):
     """A job scored against the candidate profile."""
