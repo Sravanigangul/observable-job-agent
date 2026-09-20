@@ -1,6 +1,7 @@
 """Test Jev on one candidate-job decision."""
 
 from typesafe_sdk import Choice, TypeSafeClient
+from job_scout.config import get_settings
 
 
 state = {
@@ -56,7 +57,11 @@ questions = {
     )
 }
 
-with TypeSafeClient() as client:
+settings = get_settings()
+
+with TypeSafeClient(
+    api_key=settings.typesafe_api_key.get_secret_value()
+) as client:
     response = client.system_one(
         state=state,
         questions=questions,
@@ -73,6 +78,7 @@ else:
 
 print("\nJev result")
 print("----------")
-print("Decision:", decision.choice)
+print("Raw Jev choice:", decision.choice)
 print("Confidence:", decision.confidence)
 print("Probabilities:", decision.probabilities)
+print("Final routed decision:", final_decision)
