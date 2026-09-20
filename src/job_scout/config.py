@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     scout_tailor_model: str = Field(default="openai:gpt-4o-mini", alias="SCOUT_TAILOR_MODEL")
 
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
+    typesafe_api_key: SecretStr = Field(default=SecretStr(""),alias="TYPESAFE_API_KEY")
+    jev_enabled: bool = Field(
+        default=False,
+        alias="JEV_ENABLED",
+    )
 
     opik_api_key: SecretStr = Field(default=SecretStr(""), alias="OPIK_API_KEY")
     opik_workspace: str = Field(default="", alias="OPIK_WORKSPACE")
@@ -114,10 +119,14 @@ class Settings(BaseSettings):
         return self.opik_enabled and bool(self.opik_api_key.get_secret_value())
 
     @property
+    def has_typesafe(self) -> bool:
+        """Whether a TypeSafe API key is configured for Jev."""
+        return bool(self.typesafe_api_key.get_secret_value())
+
+    @property
     def has_voice(self) -> bool:
         """Whether Jobvis has both an ElevenLabs API key and an agent id."""
         return bool(self.elevenlabs_api_key.get_secret_value() and self.elevenlabs_agent_id)
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
