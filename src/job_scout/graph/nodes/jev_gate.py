@@ -89,6 +89,31 @@ def jev_gate(state: AgentState) -> dict:
                 state=jev_state,
                 questions=questions,
             )
+
+        decisions: list[JevJobDecision] = []
+        kept_jobs = []
+
+        for index, job in enumerate(jobs):
+            answer = response.choices[f"job_{index}"]
+            final_decision = _route_decision(
+                answer.choice,
+                answer.confidence,
+            )
+
+            decisions.append(
+                JevJobDecision(
+                    job_id=job.job_id,
+                    raw_choice=answer.choice,
+                    final_decision=final_decision,
+                    confidence=answer.confidence,
+                    probabilities=dict(answer.probabilities),
+                )
+            )
+
+            # Remove only high-confidence explicit mismatches.
+            if final_decision != "skip":
+                kept_jobs.append(job)
+
     except Exception as error:
         errors = list(state.get("errors") or [])
         errors.append(f"Jev gate unavailable: {type(error).__name__}")
@@ -96,30 +121,6 @@ def jev_gate(state: AgentState) -> dict:
             "jev_decisions": [],
             "errors": errors,
         }
-
-    decisions: list[JevJobDecision] = []
-    kept_jobs = []
-
-    for index, job in enumerate(jobs):
-        answer = response.choices[f"job_{index}"]
-        final_decision = _route_decision(
-            answer.choice,
-            answer.confidence,
-        )
-
-        decisions.append(
-            JevJobDecision(
-                job_id=job.job_id,
-                raw_choice=answer.choice,
-                final_decision=final_decision,
-                confidence=answer.confidence,
-                probabilities=dict(answer.probabilities),
-            )
-        )
-
-        # Fail conservatively: remove only high-confidence explicit mismatches.
-        if final_decision != "skip":
-            kept_jobs.append(job)
 
     return {
         "jobs": kept_jobs,

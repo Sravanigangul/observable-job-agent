@@ -176,3 +176,42 @@ def test_api_failure_preserves_workflow_state(monkeypatch):
     assert result["jev_decisions"] == []
     assert "jobs" not in result
     assert result["errors"] == ["Jev gate unavailable: RuntimeError"]
+
+def test_malformed_response_preserves_workflow_state(monkeypatch):
+    """Preserve jobs when Jev omits an expected decision."""
+
+    class MalformedClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def system_one(self, *, state, questions):
+            return SimpleNamespace(choices={})
+
+    monkeypatch.setattr(
+        jev_gate_module,
+        "get_settings",
+        make_settings,
+    )
+    monkeypatch.setattr(
+        jev_gate_module,
+        "TypeSafeClient",
+        MalformedClient,
+    )
+
+    result = jev_gate_module.jev_gate(
+        {
+            "profile": make_profile(),
+            "jobs": [make_job()],
+            "errors": [],
+        }
+    )
+
+    assert result["jev_decisions"] == []
+    assert "jobs" not in result
+    assert result["errors"] == ["Jev gate unavailable: KeyError"]
